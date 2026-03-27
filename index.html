@@ -1,68 +1,13 @@
 <!doctype html>
 <html lang="es">
-<head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>tabletop-helper</title>
-  <meta name="description" content="Herramientas web para juegos de mesa: sudoku killer y anotador de chinchón." />
-  <link rel="stylesheet" href="./assets/site.css" />
-</head>
-<body>
-  <main class="page">
-    <nav class="topbar">
-      <a class="brand" href="./">
-        <span class="brand-mark">♟️</span>
-        <span class="brand-copy">
-          <span class="brand-label">GitHub Pages</span>
-          <span class="brand-title">tabletop-helper</span>
-        </span>
-      </a>
-      <div class="nav">
-        <a href="./tools/sudoku-killer/">Sudoku Killer</a>
-        <a href="./tools/chinchon/">Chinchón</a>
-      </div>
-    </nav>
-
-    <section class="hero">
-      <div class="eyebrow">Herramientas de mesa</div>
-      <h1>Landing principal para centralizar utilidades del proyecto.</h1>
-      <p>
-        El repo quedó preparado como sitio estático para GitHub Pages. Desde acá podés abrir cada herramienta
-        o entrar directo por URL a su página dedicada.
-      </p>
-    </section>
-
-    <section class="grid" aria-label="Herramientas">
-      <article class="card">
-        <div class="chips">
-          <span class="chip">Sudoku</span>
-          <span class="chip">Solver</span>
-          <span class="chip">KrazyDad</span>
-        </div>
-        <h2>Sudoku Killer</h2>
-        <p>
-          Solver de cages con filtros de dígitos, restricciones entre pares y acceso rápido a PDFs de KrazyDad.
-        </p>
-        <div class="actions">
-          <a class="cta primary" href="./tools/sudoku-killer/">Abrir herramienta</a>
-        </div>
-      </article>
-
-      <article class="card">
-        <div class="chips">
-          <span class="chip">Cartas</span>
-          <span class="chip">Scoreboard</span>
-          <span class="chip">Persistencia</span>
-        </div>
-        <h2>Anotador de Chinchón</h2>
-        <p>
-          Configura jugadores, suma rondas, marca chinchón o -10, y guarda/carga el estado de la partida.
-        </p>
-        <div class="actions">
-          <a class="cta primary" href="./tools/chinchon/">Abrir herramienta</a>
-        </div>
-      </article>
-    </section>
-  </main>
-</body>
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>tabletop-helper</title>
+    <meta name="description" content="Herramientas web para juegos de mesa: sudoku killer y anotador de chinchón." />
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
 </html>
