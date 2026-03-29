@@ -105,6 +105,11 @@ a { color: inherit; text-decoration: none; }
   margin-top: 24px;
 }
 .card { padding: 24px; }
+.card-icon {
+  font-size: 32px;
+  line-height: 1;
+  margin-bottom: 14px;
+}
 .card h2 { margin: 12px 0 10px; font-size: 24px; }
 .card p { margin: 0 0 16px; color: var(--muted); line-height: 1.6; }
 .chips { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 16px; }
@@ -121,6 +126,20 @@ a { color: inherit; text-decoration: none; }
   background: linear-gradient(135deg, rgba(212,160,23,.22), rgba(212,160,23,.08));
   border-color: rgba(212,160,23,.36);
 }
+.site-footer {
+  margin-top: 48px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  color: var(--muted);
+  font-size: 13px;
+}
+.site-footer a {
+  color: var(--muted);
+  transition: color .15s ease;
+}
+.site-footer a:hover { color: var(--accent); }
 @media (max-width: 760px) {
   .page { width: min(1120px, calc(100vw - 18px)); }
   .hero { padding: 22px; }
