@@ -14,6 +14,18 @@ const TOOLS = [
     title: 'Anotador de Chinchón',
     description: 'Configura jugadores, suma rondas, marca chinchón o −10, y guarda/carga el estado de la partida.',
   },
+  {
+    to: '/tools/pacman-memory',
+    chips: ['Pac-Man', 'Memoria', 'Multijugador'],
+    title: 'Pac-Memory',
+    description: 'Juego de memoria con sprites retro de Pac-Man, Space Invaders, Tetris y más. Para 2-3 jugadores.',
+  },
+  {
+    to: '/tools/pacman-ludo',
+    chips: ['Pac-Man', 'Ludo', 'Multijugador'],
+    title: 'Pac-Ludo',
+    description: 'Ludo temático de Pac-Man: movés fantasmas por el tablero, capturás rivales y llegás al centro.',
+  },
 ]
 
 export default function Home() {
