@@ -5,6 +5,7 @@ import Chinchon from './pages/Chinchon'
 import PacmanMemory from './pages/PacmanMemory'
 import PacmanLudo from './pages/PacmanLudo'
 import ChinchonArena from './pages/ChinchonArena'
+import Truco from './pages/Truco'
 
 export default function App() {
   return (
@@ -15,6 +16,7 @@ export default function App() {
       <Route path="/tools/pacman-memory" element={<PacmanMemory />} />
       <Route path="/tools/pacman-ludo" element={<PacmanLudo />} />
       <Route path="/tools/chinchon-arena" element={<ChinchonArena />} />
+      <Route path="/tools/truco" element={<Truco />} />
     </Routes>
   )
 }

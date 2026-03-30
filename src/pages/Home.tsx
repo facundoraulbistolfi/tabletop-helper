@@ -23,6 +23,15 @@ const TOOLS = [
   },
 
   {
+    to: '/tools/truco',
+    icon: '🧉',
+    category: 'Cartas' as Category,
+    chips: ['Scoreboard', 'Buenas/Malas'],
+    title: 'Anotador de Truco',
+    description: 'Marcador de truco en palitos con buenas y malas, pensado para partidas rápidas entre nosotros y ellos.',
+  },
+
+  {
     to: '/tools/chinchon-arena',
     icon: '🎯',
     category: 'Cartas' as Category,
