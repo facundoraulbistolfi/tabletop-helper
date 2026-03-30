@@ -1,198 +1,401 @@
+/* ═══════════════════════════════════════════════════════════════════════════
+   Truco — Anotador Criollo
+   Estética: fileteado porteño, pizarrón de café, trazo a mano
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+@import url('https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,700;0,900;1,700&family=Dancing+Script:wght@600;700&family=Oswald:wght@400;600&display=swap');
+
+/* ── Variables ─────────────────────────────────────────────────────────── */
 .root {
+  --rojo:    #c0392b;
+  --rojo2:   #e74c3c;
+  --verde:   #1a6b3a;
+  --verde2:  #27ae60;
+  --crema:   #f5ead6;
+  --crema2:  #ede0c4;
+  --dorado:  #c8972b;
+  --dorado2: #f0c040;
+  --tinta:   #1c1008;
+  --tinta2:  #2d1f0f;
+  --shadow:  rgba(0,0,0,.45);
+
   min-height: 100vh;
   background:
-    radial-gradient(circle at 10% 10%, rgba(211, 44, 34, 0.2), transparent 40%),
-    radial-gradient(circle at 90% 20%, rgba(208, 167, 58, 0.2), transparent 35%),
-    linear-gradient(180deg, #121318 0%, #0e0f13 100%);
+    /* textura papel envejecido sutil */
+    repeating-linear-gradient(
+      0deg,
+      transparent,
+      transparent 28px,
+      rgba(255,255,255,.025) 28px,
+      rgba(255,255,255,.025) 29px
+    ),
+    linear-gradient(160deg, #1a0e06 0%, #0e1a0a 50%, #0a1008 100%);
+  font-family: 'Oswald', sans-serif;
 }
 
-.hero,
-.teamCard,
-.footerPanel {
-  border: 2px solid rgba(217, 183, 93, 0.42);
-  border-radius: 22px;
-  background: linear-gradient(180deg, rgba(28, 20, 16, 0.88), rgba(17, 11, 9, 0.94));
-  box-shadow: 0 18px 32px rgba(0, 0, 0, 0.3);
-}
-
-.hero {
-  padding: 28px;
-}
-
-.overline {
-  margin: 0;
-  font-size: 12px;
-  letter-spacing: 0.28em;
-  text-transform: uppercase;
-  color: #d3a337;
-}
-
-.hero h1 {
-  margin: 8px 0 12px;
-  font-size: clamp(2rem, 4vw, 3rem);
-  color: #f4dd9b;
-  text-shadow: 0 3px 10px rgba(0, 0, 0, 0.35);
-}
-
-.hero p {
-  margin: 0;
-  max-width: 70ch;
-  color: #f2e6d4;
-  line-height: 1.6;
-}
-
-.winnerBanner {
-  margin-top: 14px;
-  padding: 10px 14px;
-  border-radius: 12px;
-  border: 1px solid rgba(233, 176, 78, 0.6);
-  background: rgba(91, 35, 22, 0.45);
-  color: #ffdd9b;
-  font-weight: 600;
-}
-
-.board {
-  margin-top: 18px;
-  display: grid;
-  gap: 16px;
-  grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
-}
-
-.teamCard {
-  padding: 18px;
+/* ── Cartel / Header ───────────────────────────────────────────────────── */
+.cartel {
   position: relative;
-  overflow: hidden;
+  margin: 0 0 24px;
+  padding: 28px 24px 24px;
+  text-align: center;
+
+  background: var(--tinta2);
+  border: 3px solid var(--dorado);
+  border-radius: 4px;
+
+  /* doble borde interior — efecto fileteado */
+  outline: 6px solid var(--tinta2);
+  outline-offset: -10px;
+  box-shadow:
+    0 0 0 10px var(--dorado),
+    0 0 0 14px var(--tinta2),
+    0 8px 32px var(--shadow);
 }
 
-.teamCard::before {
-  content: '';
+/* esquinas decorativas */
+.cartel::before,
+.cartel::after {
+  content: '❧';
   position: absolute;
-  inset: 10px;
-  border-radius: 16px;
-  border: 1px dashed rgba(230, 191, 116, 0.3);
-  pointer-events: none;
-}
-
-.teamNameLabel {
-  display: grid;
-  gap: 6px;
-  font-size: 11px;
-  letter-spacing: 0.14em;
-  text-transform: uppercase;
-  color: #d6b16a;
-}
-
-.teamNameInput {
-  border: 1px solid rgba(234, 187, 98, 0.38);
-  background: rgba(42, 24, 18, 0.75);
-  color: #fff4de;
-  border-radius: 12px;
-  padding: 10px 12px;
-  font-size: 1rem;
-}
-
-.scoreLine {
-  margin-top: 16px;
-  display: flex;
-  align-items: center;
-  gap: 12px;
-}
-
-.emblem {
-  font-size: 34px;
-}
-
-.scoreValue {
-  margin: 0;
-  font-size: 2.8rem;
+  color: var(--dorado);
+  font-size: 22px;
   line-height: 1;
-  color: #ffd88e;
 }
+.cartel::before { top: 10px; left: 14px; }
+.cartel::after  { bottom: 10px; right: 14px; transform: scaleX(-1); }
 
-.segmentTag {
+.ornTop,
+.ornBottom,
+.ornPie {
+  color: var(--dorado);
+  width: 100%;
+  max-width: 280px;
+  opacity: .7;
+}
+.ornBottom { transform: scaleY(-1); }
+
+.cartelEyebrow {
   margin: 4px 0 0;
-  text-transform: uppercase;
-  letter-spacing: 0.08em;
-  color: #edcc9d;
-  font-size: 0.82rem;
+  font-family: 'Dancing Script', cursive;
+  font-size: 1.1rem;
+  color: var(--dorado2);
+  letter-spacing: .05em;
 }
 
-.palitosBlock {
-  margin-top: 16px;
-  display: grid;
-  gap: 10px;
+.cartelTitle {
+  margin: 2px 0 6px;
+  font-family: 'Playfair Display', serif;
+  font-size: clamp(3.2rem, 8vw, 5.5rem);
+  font-weight: 900;
+  line-height: 1;
+  color: var(--crema);
+  text-shadow:
+    3px 3px 0 var(--rojo),
+    6px 6px 0 rgba(0,0,0,.3);
+  letter-spacing: .04em;
 }
 
-.palitosTitle {
+.cartelSub {
   margin: 0;
-  color: #dfb971;
-  font-size: 0.9rem;
+  font-size: .8rem;
+  letter-spacing: .12em;
+  text-transform: uppercase;
+  color: var(--crema2);
+  opacity: .75;
 }
 
-.palitosText {
-  margin: 2px 0 0;
-  min-height: 28px;
-  color: #fff0cf;
-  font-size: 1.2rem;
-  font-family: 'Courier New', Courier, monospace;
-  letter-spacing: 0.06em;
-  word-break: break-word;
-}
-
-.actions {
-  margin-top: 18px;
+/* ── Tablero ────────────────────────────────────────────────────────────── */
+.tablero {
   display: grid;
-  gap: 8px;
-  grid-template-columns: repeat(5, minmax(0, 1fr));
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
 }
 
-.btn,
-.btnGhost,
-.resetBtn {
-  cursor: pointer;
-  border-radius: 10px;
-  min-height: 40px;
-  border: 1px solid rgba(239, 191, 101, 0.45);
-  background: rgba(110, 42, 23, 0.58);
-  color: #ffe7ba;
+/* ── Panel de equipo ────────────────────────────────────────────────────── */
+.panel {
+  position: relative;
+  padding: 20px 16px 16px;
+  border: 2.5px solid var(--dorado);
+  border-radius: 4px;
+  background: var(--tinta2);
+
+  /* doble borde interior */
+  outline: 5px solid var(--tinta2);
+  outline-offset: -9px;
+  box-shadow: 0 0 0 9px var(--dorado), 0 6px 20px var(--shadow);
+
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  transition: transform .15s ease;
+}
+
+.panel:hover {
+  transform: translateY(-2px);
+}
+
+.panelWinner {
+  border-color: var(--dorado2);
+  box-shadow: 0 0 0 9px var(--dorado2), 0 0 40px rgba(240,192,64,.25);
+  background: linear-gradient(160deg, #2a1e08, #1a3010);
+}
+
+/* ── Nombre ─────────────────────────────────────────────────────────────── */
+.nombreWrap {
+  position: relative;
+  text-align: center;
+}
+
+.nombreInput {
+  width: 100%;
+  background: transparent;
+  border: none;
+  outline: none;
+  text-align: center;
+  font-family: 'Dancing Script', cursive;
+  font-size: 1.9rem;
   font-weight: 700;
+  color: var(--crema);
+  caret-color: var(--dorado2);
+  padding-bottom: 4px;
 }
 
-.btn:hover,
-.btnGhost:hover,
-.resetBtn:hover {
-  background: rgba(150, 55, 28, 0.7);
+.nombreInput::placeholder { color: rgba(245,234,214,.35); }
+
+.nombreUnderline {
+  display: block;
+  height: 2px;
+  background: linear-gradient(90deg, transparent, var(--dorado), transparent);
+  margin: 0 8px;
+  opacity: .6;
 }
 
-.btnGhost {
-  background: rgba(49, 30, 25, 0.8);
+/* ── Puntaje total ──────────────────────────────────────────────────────── */
+.puntajeWrap {
+  text-align: center;
+  line-height: 1;
 }
 
-.footerPanel {
-  margin-top: 16px;
-  padding: 16px;
+.puntaje {
+  font-family: 'Playfair Display', serif;
+  font-size: clamp(3.5rem, 8vw, 5rem);
+  font-weight: 900;
+  color: var(--crema);
+  text-shadow: 2px 2px 0 var(--rojo), 0 4px 12px rgba(0,0,0,.4);
+}
+
+.puntajeDe {
+  font-family: 'Oswald', sans-serif;
+  font-size: .9rem;
+  color: var(--dorado);
+  opacity: .7;
+  margin-left: 4px;
+  vertical-align: middle;
+}
+
+/* ── Segmentos malas / buenas ───────────────────────────────────────────── */
+.segmentos {
+  display: grid;
+  grid-template-columns: 1fr 4px 1fr;
+  gap: 8px;
+  align-items: start;
+}
+
+.segmentoDiv {
+  width: 2px;
+  align-self: stretch;
+  background: linear-gradient(180deg, transparent, var(--dorado), transparent);
+  margin: 0 auto;
+}
+
+.segmento {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  padding: 10px 6px 8px;
+  border-radius: 3px;
+  border: 1px solid transparent;
+  transition: background .2s, border-color .2s;
+}
+
+.segmentoActive {
+  background: rgba(200,151,43,.08);
+  border-color: rgba(200,151,43,.3);
+}
+
+.segmentoLabel {
+  font-family: 'Oswald', sans-serif;
+  font-size: .65rem;
+  letter-spacing: .18em;
+  text-transform: uppercase;
+  color: var(--dorado);
+  opacity: .85;
+}
+
+.segmentoCount {
+  font-family: 'Oswald', sans-serif;
+  font-size: .75rem;
+  color: var(--crema2);
+  opacity: .6;
+}
+
+/* ── Palitos SVG ────────────────────────────────────────────────────────── */
+.palitoRow {
+  min-height: 52px;
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  color: #f7e8c9;
+  justify-content: center;
 }
 
-.footerPanel p {
-  margin: 0;
+.palitoSvg {
+  stroke: var(--crema);
+  /* trazo ligeramente irregular para look manuscrito */
+  filter: drop-shadow(0 1px 2px rgba(0,0,0,.5));
+  max-width: 100%;
 }
 
-.resetBtn {
-  padding: 0 16px;
+.palitoEmpty {
+  font-family: 'Oswald', sans-serif;
+  color: rgba(245,234,214,.2);
+  font-size: 1.4rem;
 }
 
-@media (max-width: 680px) {
-  .actions {
-    grid-template-columns: repeat(3, minmax(0, 1fr));
+/* ── Botones de puntaje ─────────────────────────────────────────────────── */
+.botones {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr 1fr 1fr;
+  gap: 6px;
+}
+
+.btnMas,
+.btnMenos {
+  cursor: pointer;
+  border-radius: 3px;
+  min-height: 44px;
+  font-family: 'Oswald', sans-serif;
+  font-size: .95rem;
+  font-weight: 600;
+  letter-spacing: .04em;
+  transition: background .12s, transform .08s, box-shadow .12s;
+  user-select: none;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.btnMas {
+  border: 2px solid var(--verde2);
+  background: var(--verde);
+  color: var(--crema);
+  box-shadow: 0 3px 0 #0e3d20, 0 4px 8px rgba(0,0,0,.35);
+}
+
+.btnMas:hover  { background: var(--verde2); box-shadow: 0 2px 0 #0e3d20; transform: translateY(1px); }
+.btnMas:active { transform: translateY(3px); box-shadow: none; }
+
+.btnMenos {
+  border: 2px solid var(--rojo2);
+  background: var(--rojo);
+  color: var(--crema);
+  box-shadow: 0 3px 0 #7a1a10, 0 4px 8px rgba(0,0,0,.35);
+}
+
+.btnMenos:hover  { background: var(--rojo2); box-shadow: 0 2px 0 #7a1a10; transform: translateY(1px); }
+.btnMenos:active { transform: translateY(3px); box-shadow: none; }
+
+/* ── Corona ganador ─────────────────────────────────────────────────────── */
+.coronaWrap {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  background: rgba(10,16,8,.88);
+  border-radius: 2px;
+  gap: 8px;
+  animation: fadeIn .35s ease;
+}
+
+.corona {
+  font-size: 4rem;
+  color: var(--dorado2);
+  text-shadow: 0 0 20px rgba(240,192,64,.6);
+  animation: pulse 1.8s ease-in-out infinite;
+}
+
+.coronaText {
+  font-family: 'Playfair Display', serif;
+  font-style: italic;
+  font-size: 1.5rem;
+  color: var(--crema);
+  letter-spacing: .08em;
+}
+
+@keyframes pulse {
+  0%, 100% { transform: scale(1); }
+  50% { transform: scale(1.08); }
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+
+/* ── Footer / pie ───────────────────────────────────────────────────────── */
+.pie {
+  margin-top: 20px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 14px;
+}
+
+.ornPie {
+  color: var(--dorado);
+  width: 100%;
+  max-width: 280px;
+  opacity: .5;
+  transform: scaleY(-1);
+}
+
+.btnReset {
+  cursor: pointer;
+  padding: 10px 32px;
+  font-family: 'Oswald', sans-serif;
+  font-size: .9rem;
+  font-weight: 600;
+  letter-spacing: .14em;
+  text-transform: uppercase;
+  color: var(--crema);
+  background: transparent;
+  border: 2px solid var(--dorado);
+  border-radius: 3px;
+  box-shadow: 0 0 0 4px var(--tinta2), 0 0 0 6px var(--dorado);
+  transition: background .15s, color .15s;
+}
+
+.btnReset:hover {
+  background: var(--dorado);
+  color: var(--tinta);
+}
+
+/* ── Mobile ─────────────────────────────────────────────────────────────── */
+@media (max-width: 560px) {
+  .tablero {
+    grid-template-columns: 1fr;
   }
 
-  .footerPanel {
-    flex-direction: column;
-    align-items: flex-start;
+  .cartelTitle {
+    font-size: 3rem;
+  }
+
+  .botones {
+    grid-template-columns: 1fr 1fr 1fr;
+  }
+
+  .panel {
+    outline-offset: -7px;
+    box-shadow: 0 0 0 7px var(--dorado), 0 4px 14px var(--shadow);
   }
 }
