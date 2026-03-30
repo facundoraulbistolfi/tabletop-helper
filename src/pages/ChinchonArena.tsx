@@ -1,15 +1,6 @@
 // @ts-nocheck
 import { useState, useRef, useCallback, useEffect } from "react";
 
-const ResponsiveContainer = ({ children }) => <div>{children}</div>;
-const BarChart = ({ children }) => <div>{children}</div>;
-const CartesianGrid = () => null;
-const XAxis = () => null;
-const YAxis = () => null;
-const Tooltip = () => null;
-const Legend = () => null;
-const Bar = () => null;
-
 /* ==============================================================
 CARD ENGINE
 ============================================================== */
@@ -442,12 +433,78 @@ function buildChartData(f, d, n0, n1) {
 const keys = new Set([...Object.keys(f), ...Object.keys(d)].map(Number));
 return [...keys].sort((a, b) => a - b).map(k => ({ cartas: k, [n0]: f[k] || 0, [n1]: d[k] || 0 }));
 }
-function ChartTip({ active, payload, label }) {
-if (!active || !payload?.length) return null;
+
+function DrawsBarChart({ data, botA, botB }) {
+const [hovered, setHovered] = useState<number | null>(null);
+const maxValue = Math.max(1, ...data.map(d => Math.max(d[botA.name] || 0, d[botB.name] || 0)));
+const hoveredData = hovered !== null ? data[hovered] : null;
+
 return (
-<div className="bg-gray-800 border border-gray-600 rounded-lg px-3 py-2 text-sm shadow-lg">
-<p className="text-gray-300 mb-1 font-medium">{label} carta{label !== 1 ? "s" : ""}</p>
-{payload.map(e => <p key={e.dataKey} style={{ color: e.fill }}>{e.dataKey}: {e.value}</p>)}
+<div>
+<div className="bg-gray-950 border border-gray-800 rounded-lg p-3">
+<div style={{ overflowX: "auto" }}>
+<div className="flex items-end gap-1" style={{ height: "170px", minWidth: `${Math.max(320, data.length * 26)}px` }}>
+{data.map((row, idx) => {
+const aVal = row[botA.name] || 0;
+const bVal = row[botB.name] || 0;
+const aHeight = Math.max(3, Math.round((aVal / maxValue) * 120));
+const bHeight = Math.max(3, Math.round((bVal / maxValue) * 120));
+const isActive = hovered === idx;
+
+return (
+<div
+key={row.cartas}
+className="flex flex-col items-center justify-end"
+style={{ flex: "1 0 24px", minWidth: "24px" }}
+onMouseEnter={() => setHovered(idx)}
+onMouseLeave={() => setHovered(null)}
+>
+<div className="flex items-end justify-center gap-0.5" style={{ height: "128px", width: "100%" }}>
+<div
+className="rounded"
+style={{
+height: `${aHeight}px`,
+width: "8px",
+background: botA.color,
+opacity: isActive ? 1 : 0.85,
+boxShadow: isActive ? `0 0 0 1px ${botA.color}` : "none",
+}}
+/>
+<div
+className="rounded"
+style={{
+height: `${bHeight}px`,
+width: "8px",
+background: botB.color,
+opacity: isActive ? 1 : 0.85,
+boxShadow: isActive ? `0 0 0 1px ${botB.color}` : "none",
+}}
+/>
+</div>
+<span className="text-xs text-gray-500 mt-1">{row.cartas}</span>
+</div>
+);
+})}
+</div>
+</div>
+</div>
+
+<div className="flex justify-center gap-3 mt-2 text-xs">
+<span className="inline-flex items-center gap-1" style={{ color: botA.color }}>
+<span className="rounded" style={{ width: "10px", height: "10px", background: botA.color }} />
+{botA.name}
+</span>
+<span className="inline-flex items-center gap-1" style={{ color: botB.color }}>
+<span className="rounded" style={{ width: "10px", height: "10px", background: botB.color }} />
+{botB.name}
+</span>
+</div>
+
+<div className="text-xs text-gray-500 text-center mt-1">
+{hoveredData
+? `${hoveredData.cartas} carta${hoveredData.cartas !== 1 ? "s" : ""}: ${botA.name} ${hoveredData[botA.name] || 0} · ${botB.name} ${hoveredData[botB.name] || 0}`
+: "Pasá el mouse por una columna para ver detalle"}
+</div>
 </div>
 );
 }
@@ -852,17 +909,7 @@ return (
       {chartData?.length > 0 && (
         <div className="w-full bg-gray-900 rounded-xl border border-gray-800 p-3">
           <h2 className="text-xs text-gray-400 text-center mb-2">Cartas agarradas por ronda</h2>
-          <ResponsiveContainer width="100%" height={220}>
-            <BarChart data={chartData} barGap={1}>
-              <CartesianGrid strokeDasharray="3 3" stroke="#1f2937" />
-              <XAxis dataKey="cartas" stroke="#6b7280" tick={{ fill: "#9ca3af", fontSize: 11 }} label={{ value: "Cartas", position: "insideBottom", offset: -3, fill: "#6b7280", fontSize: 11 }} />
-              <YAxis stroke="#6b7280" tick={{ fill: "#9ca3af", fontSize: 11 }} allowDecimals={false} />
-              <Tooltip content={<ChartTip />} cursor={{ fill: "rgba(255,255,255,0.03)" }} />
-              <Legend wrapperStyle={{ fontSize: 11, paddingTop: 6 }} formatter={(v) => <span style={{ color: v === BOT[simB0].name ? BOT[simB0].color : BOT[simB1].color }}>{v}</span>} />
-              <Bar dataKey={BOT[simB0].name} fill={BOT[simB0].color} radius={[3, 3, 0, 0]} maxBarSize={28} />
-              <Bar dataKey={BOT[simB1].name} fill={BOT[simB1].color} radius={[3, 3, 0, 0]} maxBarSize={28} />
-            </BarChart>
-          </ResponsiveContainer>
+          <DrawsBarChart data={chartData} botA={BOT[simB0]} botB={BOT[simB1]} />
         </div>
       )}
       {!chartData && !simRun && <div className="text-gray-600 mt-6 text-sm">Elegí los bots y dale a <span className="text-emerald-500">Simular</span></div>}
