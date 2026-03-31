@@ -1,0 +1,279 @@
+.header,
+.setupPanel,
+.scoreGrid,
+.globalActions {
+  background: linear-gradient(180deg, rgba(255,255,255,.035), rgba(255,255,255,.015));
+  border: 1px solid var(--border);
+  border-radius: 20px;
+  box-shadow: var(--shadow);
+}
+
+.header {
+  padding: 22px;
+  margin-bottom: 16px;
+}
+
+.header h1 {
+  margin: 0 0 8px;
+  font-size: clamp(2rem, 4vw, 2.8rem);
+}
+
+.header p {
+  margin: 0;
+  color: var(--muted);
+}
+
+.setupPanel {
+  padding: 20px;
+}
+
+.setupPanel h2 {
+  margin: 0 0 12px;
+}
+
+.setupControls {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 10px;
+}
+
+.setupControls label,
+.toggle {
+  display: grid;
+  gap: 6px;
+  font-size: 14px;
+  color: var(--muted);
+}
+
+.setupControls input {
+  min-height: 44px;
+  border-radius: 12px;
+  border: 1px solid var(--border);
+  background: rgba(0,0,0,.25);
+  color: var(--text);
+  padding: 0 10px;
+}
+
+.toggle {
+  margin-top: 12px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--text);
+}
+
+.playersSetup {
+  display: grid;
+  gap: 8px;
+  margin-top: 14px;
+}
+
+.playerSetupRow {
+  display: grid;
+  grid-template-columns: 36px minmax(120px, 1fr) 120px minmax(110px, 160px) 88px;
+  gap: 8px;
+  align-items: center;
+}
+
+.playerSetupRow input,
+.playerSetupRow select,
+.reorderButtons button {
+  min-height: 44px;
+  border-radius: 12px;
+  border: 1px solid var(--border);
+  background: rgba(0,0,0,.25);
+  color: var(--text);
+  padding: 0 10px;
+}
+
+.playerIndex {
+  color: var(--muted);
+  text-align: center;
+}
+
+.reorderButtons {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px;
+}
+
+.setupActions,
+.globalActions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 14px;
+}
+
+.globalActions {
+  padding: 14px;
+}
+
+.scoreGrid {
+  margin-top: 14px;
+  padding: 14px;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 12px;
+}
+
+.playerCard {
+  position: relative;
+  border: none;
+  border-radius: 20px;
+  min-height: 170px;
+  padding: 14px;
+  text-align: left;
+  display: grid;
+  align-content: space-between;
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.28), 0 12px 22px rgba(0,0,0,.35);
+  transition: transform .08s ease, filter .12s ease, box-shadow .12s ease;
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.playerCard:focus-visible {
+  outline: 3px solid rgba(255,255,255,.8);
+  outline-offset: 2px;
+}
+
+.playerCard:active,
+.playerCardActive {
+  transform: scale(.98);
+  filter: saturate(1.1);
+  box-shadow: inset 0 0 0 2px rgba(255,255,255,.45), 0 8px 14px rgba(0,0,0,.4);
+}
+
+.playerName {
+  font-size: 1.1rem;
+  font-weight: 700;
+}
+
+.playerScore {
+  font-size: clamp(2.8rem, 9vw, 4.8rem);
+  line-height: .95;
+  font-weight: 800;
+}
+
+.floatBadge {
+  position: absolute;
+  right: 10px;
+  top: 10px;
+  background: rgba(17,24,39,.86);
+  color: #f9fafb;
+  padding: 4px 8px;
+  border-radius: 999px;
+  font-weight: 700;
+  animation: float .8s ease;
+}
+
+@keyframes float {
+  from { transform: translateY(6px); opacity: 0; }
+  to { transform: translateY(0); opacity: 1; }
+}
+
+.overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(3, 6, 12, .6);
+  display: grid;
+  place-items: end center;
+  z-index: 40;
+  padding: 10px;
+}
+
+.toolbox {
+  width: min(560px, 100%);
+  background: #10131a;
+  border: 1px solid var(--border);
+  border-radius: 18px;
+  padding: 16px;
+  display: grid;
+  gap: 12px;
+}
+
+.toolboxName {
+  margin: 0;
+  font-size: 1.2rem;
+  font-weight: 700;
+}
+
+.toolboxScore {
+  margin: 2px 0 0;
+  color: var(--muted);
+}
+
+.sliderLabel {
+  display: grid;
+  gap: 8px;
+}
+
+.sliderLabel input {
+  width: 100%;
+}
+
+.modeSwitch {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+
+.modeSwitch button {
+  min-height: 44px;
+  border-radius: 12px;
+  border: 1px solid var(--border);
+  background: rgba(255,255,255,.04);
+  color: var(--text);
+}
+
+.modeActive {
+  border-color: rgba(212,160,23,.5) !important;
+  background: rgba(212,160,23,.16) !important;
+}
+
+.toolboxActions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.manualEdit {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: end;
+}
+
+.manualEdit label {
+  display: grid;
+  gap: 6px;
+}
+
+.manualEdit input {
+  min-height: 44px;
+  border-radius: 12px;
+  border: 1px solid var(--border);
+  background: rgba(0,0,0,.2);
+  color: var(--text);
+  padding: 0 10px;
+}
+
+@media (min-width: 860px) {
+  .overlay {
+    place-items: center;
+  }
+
+  .toolbox {
+    border-radius: 22px;
+  }
+}
+
+@media (max-width: 800px) {
+  .playerSetupRow {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .playerIndex {
+    display: none;
+  }
+}

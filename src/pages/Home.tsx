@@ -47,6 +47,16 @@ const TOOLS = [
     title: 'Pac-Memory',
     description: 'Juego de memoria con sprites retro de Pac-Man, Space Invaders, Tetris y más. Para 2–3 jugadores.',
   },
+
+  {
+    to: '/tools/point-counter',
+    icon: '➕',
+    category: 'Juegos' as Category,
+    chips: ['Scoreboard', 'Tap', 'Multijugador'],
+    title: 'Contador de Puntos',
+    description: 'Marcador genérico por jugador con botones de color, suma rápida por toque y suma avanzada con long press.',
+  },
+
   {
     to: '/tools/pacman-ludo',
     icon: '🕹️',

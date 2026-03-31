@@ -6,6 +6,7 @@ import PacmanMemory from './pages/PacmanMemory'
 import PacmanLudo from './pages/PacmanLudo'
 import ChinchonArena from './pages/ChinchonArena'
 import Truco from './pages/Truco'
+import PointCounter from './pages/PointCounter'
 
 export default function App() {
   return (
@@ -17,6 +18,7 @@ export default function App() {
       <Route path="/tools/pacman-ludo" element={<PacmanLudo />} />
       <Route path="/tools/chinchon-arena" element={<ChinchonArena />} />
       <Route path="/tools/truco" element={<Truco />} />
+      <Route path="/tools/point-counter" element={<PointCounter />} />
     </Routes>
   )
 }

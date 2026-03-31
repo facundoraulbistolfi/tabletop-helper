@@ -6,6 +6,7 @@ const NAV_LINKS = [
   { to: '/tools/chinchon', label: 'Chinchón' },
   { to: '/tools/chinchon-arena', label: 'Chinchón Arena' },
   { to: '/tools/truco', label: 'Truco' },
+  { to: '/tools/point-counter', label: 'Puntos' },
   { to: '/tools/pacman-memory', label: 'Pac-Memory' },
   { to: '/tools/pacman-ludo', label: 'Pac-Ludo' },
 ]
