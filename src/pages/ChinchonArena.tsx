@@ -1,137 +1,21 @@
 // @ts-nocheck
 import { useState, useRef, useCallback, useEffect } from "react";
+import {
+  SUITS, RANKS, RANK_ORDER, JOKER_REST,
+  isJoker, cardRest, sameCard,
+  createDeck, shuffle,
+  findAllMelds, findBestMelds,
+  checkChinchon,
+  legalDiscardIndex, cutScore,
+  shouldDrawDiscard, playRoundScored,
+} from "../lib/chinchon-bot-game";
 
 /* ==============================================================
-CARD ENGINE
+CARD ENGINE (UI-only constants)
 ============================================================== */
-const SUITS = [0, 1, 2, 3];
 const SUIT_ICON = ["⚔️", "🪵", "🏆", "🪙"];
 const SUIT_COLOR = ["#60a5fa", "#22c55e", "#f87171", "#fbbf24"];
-const RANKS = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12];
 const RANK_LABEL = { 0: "🃏", 1: "1", 2: "2", 3: "3", 4: "4", 5: "5", 6: "6", 7: "7", 8: "8", 9: "9", 10: "10", 11: "11", 12: "12" };
-const RANK_ORDER = { 1: 0, 2: 1, 3: 2, 4: 3, 5: 4, 6: 5, 7: 6, 8: 7, 9: 8, 10: 9, 11: 10, 12: 11 };
-const JOKER_REST = 50;
-const isJoker = (c) => c.rank === 0;
-const cardRest = (c) => isJoker(c) ? JOKER_REST : c.rank;
-const sameCard = (a, b) => a && b && a.rank === b.rank && a.suit === b.suit;
-
-function createDeck() {
-const d = [];
-for (const s of SUITS) for (const r of RANKS) d.push({ suit: s, rank: r });
-d.push({ suit: -1, rank: 0 }, { suit: -1, rank: 0 });
-return d;
-}
-function shuffle(a) {
-const arr = [...a];
-for (let i = arr.length - 1; i > 0; i--) {
-const j = Math.floor(Math.random() * (i + 1));
-[arr[i], arr[j]] = [arr[j], arr[i]];
-}
-return arr;
-}
-
-/* ==============================================================
-MELD FINDING
-============================================================== */
-function combos(arr, k) {
-if (k === 0) return [[]];
-if (arr.length < k) return [];
-const res = [];
-const go = (s, cur) => {
-if (cur.length === k) { res.push([...cur]); return; }
-for (let i = s; i <= arr.length - (k - cur.length); i++) { cur.push(arr[i]); go(i + 1, cur); cur.pop(); }
-};
-go(0, []);
-return res;
-}
-
-function findAllMelds(hand) {
-const melds = [], jIds = [];
-hand.forEach((c, i) => { if (isJoker(c)) jIds.push(i); });
-const nJ = jIds.length;
-const byRank = {};
-hand.forEach((c, i) => { if (!isJoker(c)) (byRank[c.rank] ??= []).push(i); });
-for (const indices of Object.values(byRank)) {
-for (let sz = Math.min(indices.length, 4); sz >= 2; sz--)
-for (const sub of combos(indices, sz))
-for (let j = 0; j <= nJ; j++) { if (sz + j < 3 || sz + j > 4) continue; for (const jc of combos(jIds, j)) melds.push([...sub, ...jc]); }
-if (nJ >= 2) for (const idx of indices) for (const jc of combos(jIds, 2)) melds.push([idx, ...jc]);
-}
-const bySuit = {};
-hand.forEach((c, i) => { if (!isJoker(c)) (bySuit[c.suit] ??= []).push(i); });
-for (const indices of Object.values(bySuit)) {
-const om = {};
-for (const i of indices) om[RANK_ORDER[hand[i].rank]] = i;
-for (let s = 0; s <= 11; s++) for (let e = s + 2; e <= 11; e++) {
-if (e - s + 1 > 7) break;
-const present = []; let gaps = 0;
-for (let p = s; p <= e; p++) { if (om[p] !== undefined) present.push(om[p]); else gaps++; }
-if (present.length < 2 || gaps > nJ) continue;
-if (gaps === 0) melds.push([...present]);
-else for (const jc of combos(jIds, gaps)) melds.push([...present, ...jc]);
-}
-}
-if (nJ >= 2) for (const indices of Object.values(bySuit)) {
-const om = {};
-for (const i of indices) om[RANK_ORDER[hand[i].rank]] = i;
-for (const [ps, idx] of Object.entries(om)) {
-const pos = +ps;
-for (let s = pos - 2; s <= pos; s++) {
-const e2 = s + 2; if (s < 0 || e2 > 11) continue;
-let rc = 0; for (let p = s; p <= e2; p++) if (om[p] !== undefined) rc++;
-if (rc === 1) for (const jc of combos(jIds, 2)) melds.push([idx, ...jc]);
-}
-}
-}
-return melds;
-}
-
-function findBestMelds(hand) {
-const all = findAllMelds(hand);
-const totalR = hand.reduce((s, c) => s + cardRest(c), 0);
-let bestR = totalR, bestSet = [], minFree = hand.length, minFreeSet = [], minFreeR = totalR;
-const bt = (idx, used, cur) => {
-const free = hand.filter((_, i) => !used.has(i));
-const r = free.reduce((s, c) => s + cardRest(c), 0);
-const cnt = free.length;
-if (r < bestR) { bestR = r; bestSet = [...cur]; }
-if (cnt < minFree || (cnt === minFree && r < minFreeR)) { minFree = cnt; minFreeSet = [...cur]; minFreeR = r; }
-for (let i = idx; i < all.length; i++) {
-const m = all[i];
-if (m.some(x => used.has(x))) continue;
-m.forEach(x => used.add(x)); cur.push(m);
-bt(i + 1, used, cur);
-cur.pop(); m.forEach(x => used.delete(x));
-}
-};
-bt(0, new Set(), []);
-return { melds: bestSet, resto: bestR, minFree, meldsCut: minFreeSet };
-}
-
-/* -- Chinchón detection: 7 cards, one run of 7 consecutive same suit (jokers fill gaps) -- */
-function checkChinchon(hand) {
-if (hand.length !== 7) return false;
-if (hand.some(isJoker)) return false;
-const jokers = hand.filter(isJoker).length;
-const normals = hand.filter(c => !isJoker(c));
-// All normals must be same suit
-if (normals.length > 0) {
-const suit = normals[0].suit;
-if (!normals.every(c => c.suit === suit)) return false;
-}
-// Check if they form 7 consecutive with jokers filling gaps
-const orders = normals.map(c => RANK_ORDER[c.rank]).sort((a, b) => a - b);
-// Try all possible spans of 7 consecutive positions
-for (let start = 0; start <= 5; start++) {
-const end = start + 6;
-let gaps = 0;
-for (let p = start; p <= end; p++) {
-if (!orders.includes(p)) gaps++;
-}
-if (gaps <= jokers) return true;
-}
-return false;
-}
 
 /* -- nearChinchon with configurable threshold (for custom bots) -- */
 function nearChinchonCustom(hand, threshold) {
@@ -248,18 +132,6 @@ discard: { mode: "default" },
 cut: { maxFree: 1, baseResto: 5, useScoreRules: false, scoreRules: DEFAULT_SCORE_RULES(), pursueChinchon: false, chinchonThreshold: 6, chinchonRunMode: false },
 });
 
-function shouldDrawDiscard(hand, top, botObj) {
-if (!top) return false;
-const dc = botObj.drawConfig;
-if (!dc) return false;
-if (dc.mode === "always_deck") return false;
-const b7 = findBestMelds(hand);
-const t2 = [...hand, { ...top }];
-const a8 = findBestMelds(t2);
-if (a8.minFree < b7.minFree) return true;
-if (dc.mode === "aggressive") return a8.resto < b7.resto;
-return a8.resto < b7.resto - (dc.restoThreshold ?? 3);
-}
 
 function buildCanCut(cut) {
 return (m7, score, hand) => {
@@ -416,61 +288,6 @@ GAME ENGINE
 ============================================================== */
 const deepH = (h) => h.map(c => ({ ...c }));
 const deepD = (d) => d.map(c => ({ ...c }));
-const legalDiscardIndex = (hand, idx) => {
-if (idx >= 0 && idx < hand.length && !isJoker(hand[idx])) return idx;
-for (let i = hand.length - 1; i >= 0; i--) if (!isJoker(hand[i])) return i;
-return idx;
-};
-
-// Scoring: chinchón = instant game win. minFree===0 = -10. else = resto.
-function cutScore(hand) {
-if (checkChinchon(hand)) return { score: 0, chinchon: true };
-const m = findBestMelds(hand);
-if (m.minFree === 0) return { score: -10, chinchon: false };
-return { score: m.resto, chinchon: false };
-}
-
-function playRoundScored(h0, h1, deckIn, strat0, strat1, scores) {
-const h = [h0, h1], deck = deckIn, st = [strat0, strat1], dr = [0, 0], dp = [];
-// Starter (h0) gets 8 cards — deal one extra from the deck, then discard one (no draw on first turn)
-if (deck.length) h[0].push(deck.pop());
-{ const wi = legalDiscardIndex(h[0], st[0].pickDiscard(h[0]));
-  const disc = h[0].splice(wi, 1)[0]; dp.push(disc);
-  const m7 = findBestMelds(h[0]);
-  if (st[0].canCut(m7, scores[0], h[0])) {
-    const cs = cutScore(h[0]); const other = findBestMelds(h[1]);
-    return { winner: 0, cards: 0, addScores: [cs.score, other.resto], chinchon: cs.chinchon };
-  }
-}
-// Player 1 can cut with their initial 7 cards before their first turn
-{ const m7 = findBestMelds(h[1]);
-  if (st[1].canCut(m7, scores[1], h[1])) {
-    const cs = cutScore(h[1]); const other = findBestMelds(h[0]);
-    return { winner: 1, cards: 0, addScores: [other.resto, cs.score], chinchon: cs.chinchon };
-  }
-}
-// Main loop: player 1 goes first (player 0 already did their initial discard)
-for (let t = 0; t < 80; t++) {
-const p = 1 - (t % 2); if (!deck.length) break;
-const top = dp.length ? dp[dp.length - 1] : null;
-let card;
-if (top && st[p].drawConfig && shouldDrawDiscard(h[p], top, st[p])) { card = dp.pop(); }
-else { card = deck.pop(); }
-h[p].push(card);
-const wi = legalDiscardIndex(h[p], st[p].pickDiscard(h[p]));
-const disc = h[p][wi]; const kept = !sameCard(disc, card); h[p].splice(wi, 1);
-dp.push(disc);
-if (kept) dr[p]++;
-const m7 = findBestMelds(h[p]);
-if (st[p].canCut(m7, scores[p], h[p])) {
-const cs = cutScore(h[p]); const other = findBestMelds(h[1 - p]);
-return { winner: p, cards: dr[p], addScores: p === 0 ? [cs.score, other.resto] : [other.resto, cs.score], chinchon: cs.chinchon };
-}
-}
-const m0 = findBestMelds(h[0]), m1 = findBestMelds(h[1]);
-const w = m0.minFree <= m1.minFree ? 0 : 1;
-return { winner: w, cards: dr[w], addScores: [m0.resto, m1.resto], chinchon: false };
-}
 
 function simulateGamePair(bi0, bi1) {
 const b0 = BOT[bi0], b1 = BOT[bi1];
@@ -1186,8 +1003,10 @@ return (
 }
 
 /* -- Play sub-component -- */
-function PlayGame({ g, bot, history, showBot, bML, pML, topD, canPlayerCut, setShowBot, playerDraw, playerDiscard, playerCut, selectCard, nextRound, resetGame, sortHand }) {
+function PlayGame({ g, bot, history, showBot, bML, pML, topD, canPlayerCut, setShowBot, playerDraw, selectCard, nextRound, resetGame, sortHand, toggleCutMode }) {
 const [spyModal, setSpyModal] = useState(false);
+const dragSrcRef = useRef(null);
+const dragOccurred = useRef(false);
 
 const handleSpy = () => {
 if (showBot) { setShowBot(false); return; }
@@ -1419,8 +1238,6 @@ const [botChoice, setBotChoice] = useState(null);
 const [g, setG] = useState(null);
 const [history, setHistory] = useState([]);
 const [showBot, setShowBot] = useState(false);
-const dragSrcRef = useRef(null);
-const dragOccurred = useRef(false);
 
 // -- Sim --
 const runSim = useCallback(() => {
@@ -1824,8 +1641,8 @@ return (
       )}
       {g && botChoice !== null && (
         <PlayGame g={g} bot={BOT[botChoice]} history={history} showBot={showBot} bML={bML} pML={pML} topD={topD}
-          canPlayerCut={canPlayerCut} setShowBot={setShowBot} playerDraw={playerDraw} playerDiscard={playerDiscard}
-          playerCut={playerCut} selectCard={selectCard} nextRound={nextRound} resetGame={resetGame} sortHand={sortHand} />
+          canPlayerCut={canPlayerCut} setShowBot={setShowBot} playerDraw={playerDraw}
+          selectCard={selectCard} nextRound={nextRound} resetGame={resetGame} sortHand={sortHand} toggleCutMode={toggleCutMode} />
       )}
     </div>
   )}
