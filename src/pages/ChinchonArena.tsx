@@ -10,7 +10,7 @@ const SUIT_COLOR = ["#60a5fa", "#22c55e", "#f87171", "#fbbf24"];
 const RANKS = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12];
 const RANK_LABEL = { 0: "🃏", 1: "1", 2: "2", 3: "3", 4: "4", 5: "5", 6: "6", 7: "7", 8: "8", 9: "9", 10: "10", 11: "11", 12: "12" };
 const RANK_ORDER = { 1: 0, 2: 1, 3: 2, 4: 3, 5: 4, 6: 5, 7: 6, 8: 7, 9: 8, 10: 9, 11: 10, 12: 11 };
-const JOKER_REST = 25;
+const JOKER_REST = 50;
 const isJoker = (c) => c.rank === 0;
 const cardRest = (c) => isJoker(c) ? JOKER_REST : c.rank;
 const sameCard = (a, b) => a && b && a.rank === b.rank && a.suit === b.suit;
@@ -111,6 +111,7 @@ return { melds: bestSet, resto: bestR, minFree, meldsCut: minFreeSet };
 /* -- Chinchón detection: 7 cards, one run of 7 consecutive same suit (jokers fill gaps) -- */
 function checkChinchon(hand) {
 if (hand.length !== 7) return false;
+if (hand.some(isJoker)) return false;
 const jokers = hand.filter(isJoker).length;
 const normals = hand.filter(c => !isJoker(c));
 // All normals must be same suit
@@ -170,14 +171,14 @@ BOTS
 function defaultDiscard(hand8) {
 const a = findBestMelds(hand8); const inM = new Set(a.meldsCut.flat());
 let wi = -1, ws = -1;
-hand8.forEach((c, i) => { if (!inM.has(i) && cardRest(c) > ws) { ws = cardRest(c); wi = i; } });
+hand8.forEach((c, i) => { if (!isJoker(c) && !inM.has(i) && cardRest(c) > ws) { ws = cardRest(c); wi = i; } });
 return wi === -1 ? hand8.length - 1 : wi;
 }
 function taiDiscard(hand8) {
 const a = findBestMelds(hand8); const inM = new Set(a.melds.flat());
 let wi = -1, ws = -1;
-hand8.forEach((c, i) => { if (!inM.has(i) && c.rank > ws) { ws = c.rank; wi = i; } });
-if (wi === -1) { let hi = -1, hr = -1; hand8.forEach((c, i) => { if (c.rank > hr) { hr = c.rank; hi = i; } }); return hi; }
+hand8.forEach((c, i) => { if (!isJoker(c) && !inM.has(i) && c.rank > ws) { ws = c.rank; wi = i; } });
+if (wi === -1) { let hi = -1, hr = -1; hand8.forEach((c, i) => { if (!isJoker(c) && c.rank > hr) { hr = c.rank; hi = i; } }); return hi; }
 return wi;
 }
 
@@ -186,6 +187,7 @@ that leaves the best 7-card hand (lowest resto, then fewest free cards) -- */
 function angryDiscard(hand8) {
 let bestIdx = 0, bestResto = 9999, bestFree = 99;
 for (let i = 0; i < hand8.length; i++) {
+if (isJoker(hand8[i])) continue;
 const test = hand8.filter((_, j) => j !== i);
 const m = findBestMelds(test);
 if (m.minFree < bestFree || (m.minFree === bestFree && m.resto < bestResto)) {
@@ -415,6 +417,11 @@ GAME ENGINE
 ============================================================== */
 const deepH = (h) => h.map(c => ({ ...c }));
 const deepD = (d) => d.map(c => ({ ...c }));
+const legalDiscardIndex = (hand, idx) => {
+if (idx >= 0 && idx < hand.length && !isJoker(hand[idx])) return idx;
+for (let i = hand.length - 1; i >= 0; i--) if (!isJoker(hand[i])) return i;
+return idx;
+};
 
 // Scoring: chinchón = instant game win. minFree===0 = -10. else = resto.
 function cutScore(hand) {
@@ -440,7 +447,7 @@ let card;
 if (top && st[p].drawConfig && shouldDrawDiscard(h[p], top, st[p])) { card = dp.pop(); }
 else { card = deck.pop(); }
 h[p].push(card);
-const wi = st[p].pickDiscard(h[p]);
+const wi = legalDiscardIndex(h[p], st[p].pickDiscard(h[p]));
 const disc = h[p][wi]; const kept = !sameCard(disc, card); h[p].splice(wi, 1);
 dp.push(disc);
 if (kept) dr[p]++;
@@ -508,7 +515,7 @@ let card;
 if (top && st[p].drawConfig && shouldDrawDiscard(h[p], top, st[p])) { card = dp.pop(); }
 else { card = deck.pop(); }
 h[p].push(card);
-const wi = st[p].pickDiscard(h[p]);
+const wi = legalDiscardIndex(h[p], st[p].pickDiscard(h[p]));
 const disc = h[p][wi]; const kept = !sameCard(disc, card); h[p].splice(wi, 1);
 dp.push(disc);
 if (kept) dr[p]++;
@@ -549,7 +556,7 @@ let drawn;
 if (drawDisc && dp.length) drawn = dp.pop(); else if (deck.length) drawn = deck.pop();
 else return { ...g, phase: "roundEnd", roundResult: { reason: "empty" } };
 hand.push(drawn);
-const wi = botObj.pickDiscard(hand); const disc = hand.splice(wi, 1)[0]; dp.push(disc);
+const wi = legalDiscardIndex(hand, botObj.pickDiscard(hand)); const disc = hand.splice(wi, 1)[0]; dp.push(disc);
 const m7 = findBestMelds(hand);
 if (botObj.canCut(m7, g.scores[1], hand)) {
 const cs = cutScore(hand); const pM = findBestMelds(g.pHand);
@@ -779,14 +786,14 @@ function generateSimPrompt(cfg0, cfg1, metrics) {
 const { gameWins, roundWins, sweepWins, chinchonWins, totalRounds, numGames } = metrics;
 const total = gameWins[0] + gameWins[1];
 const totalPairs = sweepWins[0] + sweepWins[1] + sweepWins[2];
-return `Tengo dos bots de Chinchón (baraja española 40 cartas + 2 comodines) que simularon ${numGames} partidas espejo.
+return `Tengo dos bots de Chinchón (baraja española de 50 cartas, incluyendo 2 comodines) que simularon ${numGames} partidas espejo.
 
 REGLAS RELEVANTES:
 - 7 cartas por jugador. En su turno: roba del mazo o descarte, luego descarta 1.
 - Melds válidos: escalera de 3–7 cartas del mismo palo, o grupo de 3–4 cartas del mismo número.
 - Se puede cortar cuando el resto (puntos de cartas sueltas) ≤ 5 y hay máximo 1 carta suelta. Resto = suma de valores de cartas fuera de melds.
 - Si todas las cartas forman melds: corte con -10 puntos.
-- Chinchón: 7 cartas del mismo palo consecutivas (jokers llenan huecos) = victoria instantánea de la partida.
+- Chinchón: 7 cartas consecutivas del mismo palo y sin comodines = victoria instantánea de la partida.
 - El jugador acumula los puntos del que cortó al revés (o su propio resto si cortó). Se elimina a los 100 puntos.
 - Partidas espejo: misma repartida de cartas, pero se intercambian manos y quien arranca. Neutraliza la aleatoriedad.
 
@@ -1411,11 +1418,13 @@ const selectCard = (i) => { if (!g || g.phase !== "playerDiscard") return; setG(
 const playerDiscard = () => {
 if (!g || g.phase !== "playerDiscard" || g.selectedIdx === null) return;
 const ng = { ...g, pHand: [...g.pHand], discardPile: [...g.discardPile] };
+if (isJoker(ng.pHand[ng.selectedIdx])) { setG({ ...g, message: "No podés descartar comodines" }); return; }
 const disc = ng.pHand.splice(ng.selectedIdx, 1)[0]; ng.discardPile.push(disc);
 ng.selectedIdx = null; ng.drawnCard = null; ng.phase = "botTurn"; ng.turn = 1; ng.message = null; setG(ng);
 };
 const playerCut = () => {
 if (!g || g.phase !== "playerDiscard" || g.selectedIdx === null) return;
+if (isJoker(g.pHand[g.selectedIdx])) { setG({ ...g, message: "No podés cortar tirando un comodín" }); return; }
 const testHand = g.pHand.filter((_, i) => i !== g.selectedIdx);
 const f7 = findBestMelds(testHand);
 if (f7.minFree > 1) { setG({ ...g, message: "No podés cortar — más de 1 carta suelta" }); return; }
@@ -1463,7 +1472,7 @@ let canPlayerCut = false;
 if (g?.phase === "playerDiscard" && g.selectedIdx !== null) {
 const test = g.pHand.filter((_, i) => i !== g.selectedIdx);
 const testMelds = findBestMelds(test);
-canPlayerCut = testMelds.minFree <= 1 && testMelds.resto <= 5;
+canPlayerCut = !isJoker(g.pHand[g.selectedIdx]) && testMelds.minFree <= 1 && testMelds.resto <= 5;
 }
 const pML = g?.pHand ? findBestMelds(g.pHand) : null;
 const bML = g?.bHand ? findBestMelds(g.bHand) : null;
@@ -1474,7 +1483,7 @@ const bn = (slot) => matchSwapped ? mvBots[slot === 0 ? 1 : 0] : mvBots[slot];
 return (
 <div className="min-h-screen bg-gray-950 text-gray-100 flex flex-col items-center px-3 py-5 font-sans">
 <h1 className="text-xl font-extrabold tracking-tight mb-0.5">Chinchón Lab</h1>
-<p className="text-gray-600 text-xs mb-3">Baraja española + 2 comodines · {BOT.length} bots</p>
+<p className="text-gray-600 text-xs mb-3">Baraja de 50 cartas (incluye 2 comodines) · {BOT.length} bots</p>
 
   <div className="flex gap-0.5 bg-gray-900 rounded-lg p-1 mb-4">
     {[["sim", "Simulación"], ["match", "Ver Partida"], ["play", "Jugar"], ["custom", "Bots"]].map(([k, l]) => (
