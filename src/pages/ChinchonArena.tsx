@@ -302,6 +302,42 @@ pickDiscard: cfg.discard.mode === "high_rank" ? taiDiscard : cfg.discard.mode ==
 
 function buildCustomBot(cfg) { return buildBotFromConfig(cfg); }
 
+function sanitizeImportConfig(raw) {
+if (!raw || typeof raw !== "object" || Array.isArray(raw)) return null;
+if (typeof raw.name !== "string" || !raw.name.trim()) return null;
+if (!raw.draw || !raw.discard || !raw.cut) return null;
+const draw = raw.draw ?? {};
+const discard = raw.discard ?? {};
+const cut = raw.cut ?? {};
+const validDraw = ["always_deck", "smart", "aggressive"];
+const validDiscard = ["default", "high_rank", "optimal"];
+if (!validDraw.includes(draw.mode)) return null;
+if (!validDiscard.includes(discard.mode)) return null;
+return {
+id: "custom-" + Date.now(),
+name: String(raw.name).slice(0, 12).trim(),
+emoji: CUSTOM_EMOJIS.includes(String(raw.emoji)) ? String(raw.emoji) : "🧪",
+colorIdx: typeof raw.colorIdx === "number" ? Math.min(Math.max(0, Math.floor(raw.colorIdx)), CUSTOM_COLORS.length - 1) : 0,
+description: typeof raw.description === "string" ? raw.description.slice(0, 120) : "",
+draw: {
+mode: draw.mode,
+restoThreshold: typeof draw.restoThreshold === "number" ? Math.min(Math.max(1, Math.floor(draw.restoThreshold)), 10) : 3,
+},
+discard: { mode: discard.mode },
+cut: {
+maxFree: typeof cut.maxFree === "number" ? Math.min(Math.max(0, Math.floor(cut.maxFree)), 1) : 1,
+baseResto: Math.min(Math.max(0, Math.floor(cut.baseResto ?? 5)), 5),
+useScoreRules: Boolean(cut.useScoreRules),
+scoreRules: Array.isArray(cut.scoreRules)
+? DEFAULT_SCORE_RULES().map((def, i) => ({ minScore: def.minScore, maxResto: Math.min(Math.max(0, Math.floor(cut.scoreRules[i]?.maxResto ?? def.maxResto)), 5) }))
+: DEFAULT_SCORE_RULES(),
+pursueChinchon: Boolean(cut.pursueChinchon),
+chinchonThreshold: [5, 6].includes(cut.chinchonThreshold) ? cut.chinchonThreshold : 6,
+chinchonRunMode: Boolean(cut.chinchonRunMode),
+},
+};
+}
+
 function loadCustomConfigs() {
 try {
 const configs = JSON.parse(localStorage.getItem("chinchon-arena-custom-bots") || "[]");
@@ -1131,6 +1167,10 @@ const [viewingBot, setViewingBot] = useState(null); // null | config object bein
 const [showDescMode, setShowDescMode] = useState<"desc" | "config">("desc");
 const [benchmarks, setBenchmarks] = useState<Record<string, { wins: number; total: number }>>({});
 const [benchmarking, setBenchmarking] = useState<string | null>(null);
+const [copiedId, setCopiedId] = useState<string | null>(null);
+const [showImport, setShowImport] = useState(false);
+const [importText, setImportText] = useState("");
+const [importError, setImportError] = useState<string | null>(null);
 useEffect(() => { saveCustomConfigs(customConfigs); syncBots(customConfigs); }, [customConfigs]);
 // Initial sync on mount
 useEffect(() => { syncBots(customConfigs); }, []);
@@ -1548,14 +1588,40 @@ return (
           <div className="border-t border-gray-800 pt-4 mb-4">
             <div className="flex items-center justify-between mb-2">
               <p className="text-xs text-gray-600 uppercase tracking-wider">Mis bots</p>
-              {customConfigs.length < 4 && (
-                <button onClick={() => setEditingBot(DEFAULT_CUSTOM_CONFIG())}
-                  className="bg-amber-600 hover:bg-amber-500 text-white px-3 py-1 rounded text-xs font-semibold active:scale-95 transition-all">
-                  + Nuevo
+              <div className="flex gap-1.5">
+                <button onClick={() => { setShowImport(v => !v); setImportText(""); setImportError(null); }}
+                  className="text-xs text-gray-400 hover:text-gray-200 bg-gray-800 px-2.5 py-1 rounded border border-gray-700 hover:border-gray-600 transition-colors">
+                  {showImport ? "Cancelar" : "Importar"}
                 </button>
-              )}
+                {customConfigs.length < 4 && (
+                  <button onClick={() => setEditingBot(DEFAULT_CUSTOM_CONFIG())}
+                    className="bg-amber-600 hover:bg-amber-500 text-white px-3 py-1 rounded text-xs font-semibold active:scale-95 transition-all">
+                    + Nuevo
+                  </button>
+                )}
+              </div>
             </div>
-            {customConfigs.length === 0 && (
+            {showImport && (
+              <div className="mb-3 bg-gray-900 border border-gray-700 rounded-lg p-3">
+                <p className="text-xs text-gray-500 mb-2">Pegá el JSON de un bot exportado:</p>
+                <textarea value={importText} onChange={e => { setImportText(e.target.value); setImportError(null); }}
+                  rows={4} placeholder='{ "name": "...", "emoji": "🧪", ... }'
+                  className="w-full bg-gray-800 border border-gray-700 rounded px-2 py-1.5 text-xs text-gray-200 font-mono focus:border-gray-500 focus:outline-none resize-none" />
+                {importError && <p className="text-xs text-red-400 mt-1">{importError}</p>}
+                <button onClick={() => {
+                  let raw;
+                  try { raw = JSON.parse(importText); } catch { setImportError("JSON inválido"); return; }
+                  const cfg = sanitizeImportConfig(raw);
+                  if (!cfg) { setImportError("Configuración inválida o incompleta"); return; }
+                  if (customConfigs.length >= 4) { setImportError("Ya tenés 4 bots custom (máximo)"); return; }
+                  setCustomConfigs(prev => [...prev, cfg]);
+                  setShowImport(false); setImportText("");
+                }} className="mt-2 bg-amber-600 hover:bg-amber-500 text-white px-3 py-1 rounded text-xs font-semibold transition-colors">
+                  Importar bot
+                </button>
+              </div>
+            )}
+            {customConfigs.length === 0 && !showImport && (
               <div className="text-center text-gray-600 text-sm bg-gray-900 border border-gray-800 rounded-lg p-5">
                 Ningún bot custom aún. ¡Creá uno!
               </div>
@@ -1587,6 +1653,14 @@ return (
                           className="text-xs text-gray-400 hover:text-gray-200 bg-gray-800 px-2 py-0.5 rounded">Ver</button>
                         <button onClick={() => setEditingBot(JSON.parse(JSON.stringify(cfg)))}
                           className="text-xs text-gray-400 hover:text-gray-200 bg-gray-800 px-2 py-0.5 rounded">Editar</button>
+                        <button onClick={() => {
+                          const { id: _id, ...exportable } = cfg;
+                          navigator.clipboard.writeText(JSON.stringify(exportable, null, 2));
+                          setCopiedId(cfg.id);
+                          setTimeout(() => setCopiedId(null), 2000);
+                        }} className="text-xs text-sky-400 hover:text-sky-200 bg-gray-800 px-2 py-0.5 rounded">
+                          {copiedId === cfg.id ? "✓ Copiado" : "Exportar"}
+                        </button>
                         <button onClick={() => runBenchmark(cfg)} disabled={benchmarking === cfg.id}
                           className="text-xs text-amber-400 hover:text-amber-200 bg-gray-800 px-2 py-0.5 rounded disabled:opacity-50">
                           {benchmarking === cfg.id ? "..." : "⚡ Probar"}
