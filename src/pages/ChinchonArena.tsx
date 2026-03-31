@@ -125,7 +125,6 @@ const orders = normals.map(c => RANK_ORDER[c.rank]).sort((a, b) => a - b);
 for (let start = 0; start <= 5; start++) {
 const end = start + 6;
 let gaps = 0;
-let allPresent = true;
 for (let p = start; p <= end; p++) {
 if (!orders.includes(p)) gaps++;
 }
@@ -433,15 +432,26 @@ return { score: m.resto, chinchon: false };
 
 function playRoundScored(h0, h1, deckIn, strat0, strat1, scores) {
 const h = [h0, h1], deck = deckIn, st = [strat0, strat1], dr = [0, 0], dp = [];
-for (let p = 0; p < 2; p++) {
-const m7 = findBestMelds(h[p]);
-if (st[p].canCut(m7, scores[p], h[p])) {
-const cs = cutScore(h[p]); const other = findBestMelds(h[1 - p]);
-return { winner: p, cards: 0, addScores: p === 0 ? [cs.score, other.resto] : [other.resto, cs.score], chinchon: cs.chinchon };
+// Starter (h0) gets 8 cards — deal one extra from the deck, then discard one (no draw on first turn)
+if (deck.length) h[0].push(deck.pop());
+{ const wi = legalDiscardIndex(h[0], st[0].pickDiscard(h[0]));
+  const disc = h[0].splice(wi, 1)[0]; dp.push(disc);
+  const m7 = findBestMelds(h[0]);
+  if (st[0].canCut(m7, scores[0], h[0])) {
+    const cs = cutScore(h[0]); const other = findBestMelds(h[1]);
+    return { winner: 0, cards: 0, addScores: [cs.score, other.resto], chinchon: cs.chinchon };
+  }
 }
+// Player 1 can cut with their initial 7 cards before their first turn
+{ const m7 = findBestMelds(h[1]);
+  if (st[1].canCut(m7, scores[1], h[1])) {
+    const cs = cutScore(h[1]); const other = findBestMelds(h[0]);
+    return { winner: 1, cards: 0, addScores: [other.resto, cs.score], chinchon: cs.chinchon };
+  }
 }
+// Main loop: player 1 goes first (player 0 already did their initial discard)
 for (let t = 0; t < 80; t++) {
-const p = t % 2; if (!deck.length) break;
+const p = 1 - (t % 2); if (!deck.length) break;
 const top = dp.length ? dp[dp.length - 1] : null;
 let card;
 if (top && st[p].drawConfig && shouldDrawDiscard(h[p], top, st[p])) { card = dp.pop(); }
@@ -504,12 +514,26 @@ function playReplay(h0, h1, deckIn, strat0, strat1, scores) {
 const h = [h0, h1], deck = deckIn, st = [strat0, strat1], dr = [0, 0], steps = [], dp = [];
 const sn = () => [h[0].map(c => ({ ...c })), h[1].map(c => ({ ...c }))];
 const ms = () => [findBestMelds(h[0]), findBestMelds(h[1])];
+// Starter (h0) gets 8 cards
+if (deck.length) h[0].push(deck.pop());
 steps.push({ type: "deal", hands: sn(), melds: ms(), drawn: [0, 0] });
-for (let p = 0; p < 2; p++) { const m7 = findBestMelds(h[p]); if (st[p].canCut(m7, scores[p], h[p])) {
-const cs = cutScore(h[p]);
-steps.push({ type: "cut", player: p, card: null, kept: false, discarded: null, hands: sn(), melds: ms(), freeCards: m7.minFree, drawn: [...dr], chinchon: cs.chinchon, score: cs.score }); return steps; } }
+// Starter initial discard (no draw on first turn)
+{ const wi = legalDiscardIndex(h[0], st[0].pickDiscard(h[0]));
+  const disc = h[0].splice(wi, 1)[0]; dp.push(disc);
+  const m7 = findBestMelds(h[0]);
+  steps.push({ type: "initial_discard", player: 0, discarded: { ...disc }, hands: sn(), melds: ms(), freeCards: m7.minFree, drawn: [...dr] });
+  if (st[0].canCut(m7, scores[0], h[0])) {
+    const cs = cutScore(h[0]);
+    steps.push({ type: "cut", player: 0, card: null, kept: false, discarded: { ...disc }, hands: sn(), melds: ms(), freeCards: m7.minFree, drawn: [...dr], chinchon: cs.chinchon, score: cs.score }); return steps;
+  }
+}
+// Player 1 can cut with initial 7 cards
+{ const m7 = findBestMelds(h[1]); if (st[1].canCut(m7, scores[1], h[1])) {
+  const cs = cutScore(h[1]);
+  steps.push({ type: "cut", player: 1, card: null, kept: false, discarded: null, hands: sn(), melds: ms(), freeCards: m7.minFree, drawn: [...dr], chinchon: cs.chinchon, score: cs.score }); return steps; } }
+// Main loop: player 1 goes first
 for (let t = 0; t < 80; t++) {
-const p = t % 2; if (!deck.length) break;
+const p = 1 - (t % 2); if (!deck.length) break;
 const top = dp.length ? dp[dp.length - 1] : null;
 let card;
 if (top && st[p].drawConfig && shouldDrawDiscard(h[p], top, st[p])) { card = dp.pop(); }
@@ -541,11 +565,27 @@ return { replayA, replayB };
 /* -- Play mode helpers -- */
 function initRound(scores, dealer) {
 const deck = shuffle(createDeck());
-const pHand = deck.splice(0, 7), bHand = deck.splice(0, 7), firstCard = deck.pop();
-return { phase: "playerDraw", deck, discardPile: [firstCard], pHand, bHand, scores: [...scores], dealer, turn: dealer === 0 ? 1 : 0, selectedIdx: null, roundResult: null, message: null, drawnCard: null };
+const firstTurn = dealer === 0 ? 1 : 0; // non-dealer goes first
+const pHand = deck.splice(0, 7), bHand = deck.splice(0, 7);
+// Non-dealer (starter) gets 8 cards — they discard first, no draw on first turn
+if (firstTurn === 0) pHand.push(deck.pop()); else bHand.push(deck.pop());
+// Phase: if player starts → playerDiscard (skip draw); if bot starts → botTurn (handles 8-card discard)
+const phase = firstTurn === 0 ? "playerDiscard" : "botTurn";
+return { phase, deck, discardPile: [], pHand, bHand, scores: [...scores], dealer, turn: firstTurn, selectedIdx: null, roundResult: null, message: null, drawnCard: null };
 }
 function botTakeTurn(g, botObj) {
 const hand = [...g.bHand.map(c => ({ ...c }))], deck = [...g.deck], dp = [...g.discardPile];
+// Initial turn: bot has 8 cards, only discards (no draw)
+if (hand.length === 8) {
+  const wi = legalDiscardIndex(hand, botObj.pickDiscard(hand)); const disc = hand.splice(wi, 1)[0]; dp.push(disc);
+  const m7 = findBestMelds(hand);
+  if (botObj.canCut(m7, g.scores[1], hand)) {
+    const cs = cutScore(hand); const pM = findBestMelds(g.pHand);
+    return { ...g, bHand: hand, deck, discardPile: dp, phase: "roundEnd", drawnCard: null, botDiscard: disc,
+      roundResult: { cutter: "bot", bScore: cs.score, pScore: pM.resto, bMelds: m7, pMelds: pM, chinchon: cs.chinchon } };
+  }
+  return { ...g, bHand: hand, deck, discardPile: dp, phase: "playerDraw", turn: 0, drawnCard: null, botDiscard: disc, message: null };
+}
 const top = dp.length ? dp[dp.length - 1] : null;
 let drawDisc = false;
 if (top && deck.length) {
@@ -1233,7 +1273,7 @@ className="bg-gray-700 hover:bg-gray-600 text-white px-4 py-2 rounded-lg text-sm
         </div>
       </div>
       {g.phase === "playerDraw" && g.turn === 0 && <div className="text-center text-sm text-sky-400 mb-2">Agarrá del mazo o del descarte</div>}
-      {g.phase === "playerDiscard" && <div className="text-center text-sm text-sky-400 mb-2">{g.selectedIdx !== null ? "Descartá o cortá" : "Tocá una carta para descartar"}</div>}
+      {g.phase === "playerDiscard" && <div className="text-center text-sm text-sky-400 mb-2">{g.pHand.length === 8 ? "Inicio: tenés 8 cartas, descartá una para empezar" : g.selectedIdx !== null ? "Descartá o cortá" : "Tocá una carta para descartar"}</div>}
       {g.phase === "botTurn" && <div className="text-center text-sm text-gray-500 mb-2">{bot.name} está jugando...</div>}
       {g.message && <div className="text-center text-xs text-red-400 mb-2">{g.message}</div>}
 
@@ -1406,7 +1446,7 @@ return () => clearInterval(iv);
 }, [autoP, replay]);
 
 // -- Play --
-const startGame = (bi) => { setBotChoice(bi); const gs = initRound([0, 0], 0); if (gs.turn === 1) gs.phase = "botTurn"; setG(gs); setHistory([]); setShowBot(false); };
+const startGame = (bi) => { setBotChoice(bi); const gs = initRound([0, 0], 0); setG(gs); setHistory([]); setShowBot(false); };
 const playerDraw = (src) => {
 if (!g || g.phase !== "playerDraw" || g.turn !== 0) return;
 const ng = { ...g, pHand: [...g.pHand], deck: [...g.deck], discardPile: [...g.discardPile] };
@@ -1459,7 +1499,7 @@ setG({ ...g, phase: "gameOver", scores: ns }); return;
 const ns = [g.scores[0] + r.pScore, g.scores[1] + r.bScore];
 setHistory(h => [...h, { pScore: r.pScore, bScore: r.bScore, cutter: r.cutter, chinchon: false }]);
 if (ns[0] >= 100 || ns[1] >= 100) { setG({ ...g, phase: "gameOver", scores: ns }); return; }
-const ng = initRound(ns, g.dealer === 0 ? 1 : 0); if (ng.turn === 1) ng.phase = "botTurn"; setG(ng);
+const ng = initRound(ns, g.dealer === 0 ? 1 : 0); setG(ng);
 };
 const resetGame = () => { setG(null); setBotChoice(null); setHistory([]); };
 
@@ -1486,7 +1526,7 @@ return (
 <p className="text-gray-600 text-xs mb-3">Baraja de 50 cartas (incluye 2 comodines) · {BOT.length} bots</p>
 
   <div className="flex gap-0.5 bg-gray-900 rounded-lg p-1 mb-4">
-    {[["sim", "Simulación"], ["match", "Ver Partida"], ["play", "Jugar"], ["custom", "Bots"]].map(([k, l]) => (
+    {[["sim", "Simulación"], ["match", "Ver Partida"], ["play", "Jugar"], ["custom", "Bots"], ["reglas", "Reglas"]].map(([k, l]) => (
       <button key={k} onClick={() => setTab(k)} className={`px-3 py-1.5 rounded-md text-xs font-medium transition-colors ${tab === k ? "bg-gray-700 text-white" : "text-gray-500 hover:text-gray-300"}`}>{l}</button>
     ))}
   </div>
@@ -1676,7 +1716,14 @@ return (
 
           {/* Event box */}
           <div className="bg-gray-900 border border-gray-800 rounded-lg px-3 py-2.5 mb-3 text-center min-h-[48px] flex items-center justify-center text-sm">
-            {step.type === "deal" && <span className="text-gray-300">Se reparten <span className="text-white font-bold">7 cartas</span></span>}
+            {step.type === "deal" && <span className="text-gray-300">Reparto: <span className="text-white font-bold">8</span> cartas al que empieza, <span className="text-white font-bold">7</span> al segundo</span>}
+            {step.type === "initial_discard" && (
+              <div>
+                <span className="font-bold" style={{ color: bn(step.player).color }}>{bn(step.player).name}</span>
+                <span className="text-gray-400"> descarta de entrada </span><span className="inline-flex align-middle mx-0.5"><CardC card={step.discarded} small highlight="discarded" /></span>
+                <div className="text-xs text-gray-600 mt-0.5">Sueltas: {step.freeCards}</div>
+              </div>
+            )}
             {step.type === "turn" && (
               <div>
                 <span className="font-bold" style={{ color: bn(step.player).color }}>{bn(step.player).name}</span>
@@ -1702,7 +1749,7 @@ return (
 
           {/* Hands */}
           {(matchSwapped ? [1, 0] : [0, 1]).map(slot => {
-            const bot = bn(slot); const isAct = (step.type === "turn" || step.type === "cut") && step.player === slot;
+            const bot = bn(slot); const isAct = (step.type === "turn" || step.type === "cut" || step.type === "initial_discard") && step.player === slot;
             return (
               <div key={slot} className="mb-2">
                 <HandRow hand={step.hands[slot]} meldsData={step.melds[slot]} drawnCard={isAct && step.kept ? step.card : null}
@@ -1736,6 +1783,82 @@ return (
           canPlayerCut={canPlayerCut} setShowBot={setShowBot} playerDraw={playerDraw} playerDiscard={playerDiscard}
           playerCut={playerCut} selectCard={selectCard} nextRound={nextRound} resetGame={resetGame} sortHand={sortHand} />
       )}
+    </div>
+  )}
+
+  {/* --- REGLAS --- */}
+  {tab === "reglas" && (
+    <div className="w-full max-w-lg">
+      <div className="bg-gray-900 border border-gray-800 rounded-xl p-5 text-sm leading-relaxed">
+        <h2 className="text-base font-bold text-gray-100 mb-4">Reglas oficiales — Chinchón (variante argentina)</h2>
+
+        <div className="mb-4">
+          <h3 className="text-xs font-bold text-amber-400 uppercase tracking-wider mb-2">Mazo</h3>
+          <ul className="text-gray-300 space-y-1 list-disc list-inside">
+            <li>Se juega con <span className="text-white font-medium">50 cartas</span> (incluye 2 comodines).</li>
+          </ul>
+        </div>
+
+        <div className="mb-4">
+          <h3 className="text-xs font-bold text-amber-400 uppercase tracking-wider mb-2">Reparto inicial</h3>
+          <ul className="text-gray-300 space-y-1 list-disc list-inside">
+            <li>Se reparten <span className="text-white font-medium">7 cartas por jugador</span>.</li>
+            <li>El jugador que empieza recibe <span className="text-white font-medium">8 cartas</span> y arranca descartando 1.</li>
+          </ul>
+        </div>
+
+        <div className="mb-4">
+          <h3 className="text-xs font-bold text-amber-400 uppercase tracking-wider mb-2">Turno</h3>
+          <ul className="text-gray-300 space-y-1 list-disc list-inside">
+            <li>En cada turno, el jugador roba <span className="text-white font-medium">1 carta</span> del mazo o del descarte.</li>
+            <li>Luego descarta <span className="text-white font-medium">1 carta</span>.</li>
+            <li>El comodín <span className="text-red-400 font-medium">no puede descartarse nunca</span>.</li>
+          </ul>
+        </div>
+
+        <div className="mb-4">
+          <h3 className="text-xs font-bold text-amber-400 uppercase tracking-wider mb-2">Juegos válidos</h3>
+          <ul className="text-gray-300 space-y-1 list-disc list-inside">
+            <li><span className="text-white font-medium">Escalera</span>: 3 o más cartas consecutivas del mismo palo.</li>
+            <li><span className="text-white font-medium">Grupo</span>: 3 o más cartas del mismo número.</li>
+            <li>Todo juego válido debe tener al menos <span className="text-white font-medium">3 cartas</span>.</li>
+          </ul>
+        </div>
+
+        <div className="mb-4">
+          <h3 className="text-xs font-bold text-amber-400 uppercase tracking-wider mb-2">Corte</h3>
+          <ul className="text-gray-300 space-y-1 list-disc list-inside">
+            <li>Se puede cortar solo si hay como máximo <span className="text-white font-medium">1 carta sobrante</span>.</li>
+            <li>El valor total del resto no debe superar <span className="text-white font-medium">5 puntos</span>.</li>
+            <li>El comodín <span className="text-red-400 font-medium">no puede ser la carta que se tira</span> para cortar.</li>
+          </ul>
+        </div>
+
+        <div className="mb-4">
+          <h3 className="text-xs font-bold text-amber-400 uppercase tracking-wider mb-2">Comodines</h3>
+          <ul className="text-gray-300 space-y-1 list-disc list-inside">
+            <li>El comodín nunca se puede tirar (ni para descartar ni para cortar).</li>
+            <li>Un comodín que no forma parte de ningún juego cerrado vale <span className="text-red-400 font-medium">50 puntos en contra</span>.</li>
+          </ul>
+        </div>
+
+        <div className="mb-4">
+          <h3 className="text-xs font-bold text-amber-400 uppercase tracking-wider mb-2">Chinchón</h3>
+          <ul className="text-gray-300 space-y-1 list-disc list-inside">
+            <li>El chinchón solo vale como chinchón si está hecho <span className="text-white font-medium">sin comodines</span>: 7 cartas consecutivas del mismo palo.</li>
+            <li>Chinchón = <span className="text-emerald-400 font-medium">victoria instantánea de la partida</span>.</li>
+            <li>Si las 7 cartas forman una corrida <span className="text-yellow-400">usando comodín</span>: vale <span className="text-white font-medium">−10 puntos</span>, no gana automáticamente.</li>
+          </ul>
+        </div>
+
+        <div className="mb-2">
+          <h3 className="text-xs font-bold text-amber-400 uppercase tracking-wider mb-2">Puntaje y eliminación</h3>
+          <ul className="text-gray-300 space-y-1 list-disc list-inside">
+            <li>La partida es a <span className="text-white font-medium">100 puntos</span>.</li>
+            <li>Un jugador queda eliminado al llegar a <span className="text-red-400 font-medium">100 puntos o más</span>.</li>
+          </ul>
+        </div>
+      </div>
     </div>
   )}
 
