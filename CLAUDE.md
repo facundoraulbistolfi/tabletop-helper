@@ -109,6 +109,11 @@ HashRouter no requiere configuración de servidor, funciona en GitHub Pages sin 
 - **Estado local** con `useState`/`useMemo`. Si el estado necesita compartirse entre pages, agregar un contexto o Zustand.
 - **TypeScript strict**: `noUnusedLocals` y `noUnusedParameters` activos. El build falla si hay variables sin usar.
 
+## Reglas de Chinchón Lab
+
+- La referencia normativa para la variante argentina está en `CHINCHON_REGLAS_ARGENTINAS.md`.
+- Cualquier cambio de lógica en `src/pages/ChinchonArena.tsx` debe mantenerse alineado con ese archivo.
+
 ## Tests
 
 - Framework: **Vitest** (integrado con Vite, sin config extra).
