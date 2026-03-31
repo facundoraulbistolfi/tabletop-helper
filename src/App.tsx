@@ -16,6 +16,7 @@ export default function App() {
       <Route path="/tools/chinchon" element={<Chinchon />} />
       <Route path="/tools/pacman-memory" element={<PacmanMemory />} />
       <Route path="/tools/pacman-ludo" element={<PacmanLudo />} />
+      <Route path="/tools/chinchon-lab" element={<ChinchonArena />} />
       <Route path="/tools/chinchon-arena" element={<ChinchonArena />} />
       <Route path="/tools/truco" element={<Truco />} />
       <Route path="/tools/point-counter" element={<PointCounter />} />

@@ -340,7 +340,11 @@ chinchonRunMode: Boolean(cut.chinchonRunMode),
 
 function loadCustomConfigs() {
 try {
-const configs = JSON.parse(localStorage.getItem("chinchon-arena-custom-bots") || "[]");
+const configs = JSON.parse(
+localStorage.getItem("chinchon-lab-custom-bots")
+?? localStorage.getItem("chinchon-arena-custom-bots")
+?? "[]"
+);
 // Clamp resto values to the legal game maximum of 5
 return configs.map(cfg => ({
 ...cfg,
@@ -353,7 +357,7 @@ scoreRules: (cfg.cut?.scoreRules ?? []).map(r => ({ ...r, maxResto: Math.min(r.m
 } catch { return []; }
 }
 function saveCustomConfigs(configs) {
-localStorage.setItem("chinchon-arena-custom-bots", JSON.stringify(configs));
+localStorage.setItem("chinchon-lab-custom-bots", JSON.stringify(configs));
 }
 
 const BUILTIN_BOT_CONFIGS = [
@@ -1469,7 +1473,7 @@ const bn = (slot) => matchSwapped ? mvBots[slot === 0 ? 1 : 0] : mvBots[slot];
 
 return (
 <div className="min-h-screen bg-gray-950 text-gray-100 flex flex-col items-center px-3 py-5 font-sans">
-<h1 className="text-xl font-extrabold tracking-tight mb-0.5">Arena de Chinchón</h1>
+<h1 className="text-xl font-extrabold tracking-tight mb-0.5">Chinchón Lab</h1>
 <p className="text-gray-600 text-xs mb-3">Baraja española + 2 comodines · {BOT.length} bots</p>
 
   <div className="flex gap-0.5 bg-gray-900 rounded-lg p-1 mb-4">

@@ -32,11 +32,11 @@ const TOOLS = [
   },
 
   {
-    to: '/tools/chinchon-arena',
+    to: '/tools/chinchon-lab',
     icon: '🎯',
     category: 'Cartas' as Category,
     chips: ['Arena', 'Bots'],
-    title: 'Chinchón Arena',
+    title: 'Chinchón Lab',
     description: 'Arena de bots y modo de juego para practicar cortes, chinchón y estrategia de descarte.',
   },
   {

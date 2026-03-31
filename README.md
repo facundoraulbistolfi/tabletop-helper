@@ -20,7 +20,7 @@ Scoreboard completo para el juego de cartas Chinchón. Configura de 2 a 6 jugado
 ### Anotador de Truco
 Marcador de truco en palitos con soporte de buenas/malas, pensado para partidas rápidas entre “nosotros” y “ellos”.
 
-### Chinchón Arena
+### Chinchón Lab
 Arena de estrategias para Chinchón con bots, simulaciones y replay de manos. Permite comparar comportamientos entre bots, correr partidas espejo y jugar contra una IA en modo interactivo.
 
 ### Pac-Memory
@@ -38,7 +38,7 @@ Ludo temático de Pac-Man: movés fichas de fantasmas por el tablero, capturás 
 - `/#/tools/sudoku-killer` → Sudoku Killer
 - `/#/tools/chinchon` → Anotador de Chinchón
 - `/#/tools/truco` → Anotador de Truco
-- `/#/tools/chinchon-arena` → Chinchón Arena
+- `/#/tools/chinchon-lab` → Chinchón Lab
 - `/#/tools/pacman-memory` → Pac-Memory
 - `/#/tools/pacman-ludo` → Pac-Ludo
 

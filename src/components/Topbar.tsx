@@ -4,7 +4,7 @@ const NAV_LINKS = [
   { to: '/', label: 'Inicio' },
   { to: '/tools/sudoku-killer', label: 'Sudoku Killer' },
   { to: '/tools/chinchon', label: 'Chinchón' },
-  { to: '/tools/chinchon-arena', label: 'Chinchón Arena' },
+  { to: '/tools/chinchon-lab', label: 'Chinchón Lab' },
   { to: '/tools/truco', label: 'Truco' },
   { to: '/tools/point-counter', label: 'Puntos' },
   { to: '/tools/pacman-memory', label: 'Pac-Memory' },

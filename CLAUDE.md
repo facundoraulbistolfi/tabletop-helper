@@ -84,7 +84,7 @@ Usa **HashRouter**, por lo que las URLs tienen `#`:
 | `/#/tools/sudoku-killer` | Sudoku Killer |
 | `/#/tools/chinchon` | Anotador de Chinchón |
 | `/#/tools/truco` | Anotador de Truco |
-| `/#/tools/chinchon-arena` | Chinchón Arena |
+| `/#/tools/chinchon-lab` | Chinchón Lab |
 | `/#/tools/pacman-memory` | Pac-Memory |
 | `/#/tools/pacman-ludo` | Pac-Ludo |
 
