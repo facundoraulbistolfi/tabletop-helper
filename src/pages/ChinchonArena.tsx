@@ -699,6 +699,117 @@ boxShadow: isActive ? `0 0 0 1px ${botB.color}` : "none",
 );
 }
 
+/* -- Win rate evolution chart -- */
+function WinRateChart({ data, bot0, bot1 }) {
+if (data.length < 2) return null;
+const W = 500, H = 130;
+const PAD = { top: 12, right: 14, bottom: 22, left: 36 };
+const plotW = W - PAD.left - PAD.right;
+const plotH = H - PAD.top - PAD.bottom;
+const rates = data.map(d => d.rate);
+const minR = Math.max(0, Math.floor((Math.min(...rates) - 4) / 5) * 5);
+const maxR = Math.min(100, Math.ceil((Math.max(...rates) + 4) / 5) * 5);
+const rng = maxR - minR || 1;
+const toX = (i) => PAD.left + (i / (data.length - 1)) * plotW;
+const toY = (r) => PAD.top + (1 - (r - minR) / rng) * plotH;
+const path0 = data.map((d, i) => `${i === 0 ? "M" : "L"}${toX(i).toFixed(1)},${toY(d.rate).toFixed(1)}`).join(" ");
+const path1 = data.map((d, i) => `${i === 0 ? "M" : "L"}${toX(i).toFixed(1)},${toY(100 - d.rate).toFixed(1)}`).join(" ");
+const midTick = Math.floor(data.length / 2);
+return (
+<svg width="100%" viewBox={`0 0 ${W} ${H}`} style={{ display: "block" }}>
+{[25, 50, 75].filter(v => v > minR && v < maxR).map(v => (
+<g key={v}>
+<line x1={PAD.left} x2={W - PAD.right} y1={toY(v)} y2={toY(v)}
+stroke={v === 50 ? "#4b5563" : "#1f2937"} strokeWidth={v === 50 ? 1 : 0.5} strokeDasharray={v === 50 ? "4,3" : undefined} />
+<text x={PAD.left - 4} y={toY(v) + 3.5} textAnchor="end" fill="#6b7280" fontSize="9">{v}%</text>
+</g>
+))}
+<text x={PAD.left - 4} y={PAD.top + 4} textAnchor="end" fill="#4b5563" fontSize="9">{maxR}%</text>
+<text x={PAD.left - 4} y={H - PAD.bottom + 4} textAnchor="end" fill="#4b5563" fontSize="9">{minR}%</text>
+<line x1={PAD.left} x2={PAD.left} y1={PAD.top} y2={H - PAD.bottom} stroke="#374151" strokeWidth="1" />
+<line x1={PAD.left} x2={W - PAD.right} y1={H - PAD.bottom} y2={H - PAD.bottom} stroke="#374151" strokeWidth="1" />
+<text x={PAD.left} y={H - 5} textAnchor="middle" fill="#4b5563" fontSize="8">{data[0].games}</text>
+<text x={PAD.left + plotW / 2} y={H - 5} textAnchor="middle" fill="#374151" fontSize="8">{data[midTick].games}</text>
+<text x={W - PAD.right} y={H - 5} textAnchor="middle" fill="#4b5563" fontSize="8">{data[data.length - 1].games}</text>
+<path d={path1} fill="none" stroke={bot1.color} strokeWidth="1.5" opacity="0.75" />
+<path d={path0} fill="none" stroke={bot0.color} strokeWidth="1.5" opacity="0.75" />
+<text x={W - PAD.right + 2} y={toY(data[data.length - 1].rate) + 3.5} fill={bot0.color} fontSize="8">{data[data.length - 1].rate.toFixed(1)}%</text>
+<text x={W - PAD.right + 2} y={toY(100 - data[data.length - 1].rate) + 3.5} fill={bot1.color} fontSize="8">{(100 - data[data.length - 1].rate).toFixed(1)}%</text>
+</svg>
+);
+}
+
+/* -- Prompt helpers -- */
+function botConfigToPromptText(cfg) {
+const drawDescs = {
+always_deck: "solo roba del mazo (nunca del descarte)",
+smart: `roba del descarte si reduce el resto en más de ${cfg.draw?.restoThreshold ?? 3} pts`,
+aggressive: "roba del descarte ante cualquier mejora de resto",
+};
+const discardDescs = {
+default: "descarta la carta suelta de mayor valor en puntos",
+high_rank: "descarta siempre la carta con número más alto",
+optimal: "evalúa las 8 opciones de descarte y elige la que deja la mejor mano",
+};
+let cutDesc;
+if (cfg.cut?.useScoreRules && cfg.cut?.scoreRules) {
+const rules = cfg.cut.scoreRules.map(r => `${r.minScore}+ pts → resto ≤ ${r.maxResto}`).join(", ");
+cutDesc = `corte adaptativo por puntaje [${rules}], máx ${cfg.cut.maxFree ?? 1} carta suelta`;
+} else {
+cutDesc = `corta con resto ≤ ${cfg.cut?.baseResto ?? 5} pts, máx ${cfg.cut?.maxFree ?? 1} carta suelta`;
+}
+const extras = [];
+if (cfg.cut?.pursueChinchon) extras.push(`persigue chinchón desde ${cfg.cut.chinchonThreshold ?? 6} cartas en posición`);
+if (cfg.cut?.chinchonRunMode) extras.push("con corrida de 4+ cartas del mismo palo, espera el chinchón");
+return [
+`${cfg.emoji} ${cfg.name}`,
+cfg.description ? `"${cfg.description}"` : null,
+`  Robo: ${drawDescs[cfg.draw?.mode] ?? cfg.draw?.mode}`,
+`  Descarte: ${discardDescs[cfg.discard?.mode] ?? cfg.discard?.mode}`,
+`  Corte: ${cutDesc}`,
+extras.length ? `  Especial: ${extras.join("; ")}` : null,
+].filter(Boolean).join("\n");
+}
+
+function generateSimPrompt(cfg0, cfg1, metrics) {
+const { gameWins, roundWins, sweepWins, chinchonWins, totalRounds, numGames } = metrics;
+const total = gameWins[0] + gameWins[1];
+const totalPairs = sweepWins[0] + sweepWins[1] + sweepWins[2];
+return `Tengo dos bots de Chinchón (baraja española 40 cartas + 2 comodines) que simularon ${numGames} partidas espejo.
+
+REGLAS RELEVANTES:
+- 7 cartas por jugador. En su turno: roba del mazo o descarte, luego descarta 1.
+- Melds válidos: escalera de 3–7 cartas del mismo palo, o grupo de 3–4 cartas del mismo número.
+- Se puede cortar cuando el resto (puntos de cartas sueltas) ≤ 5 y hay máximo 1 carta suelta. Resto = suma de valores de cartas fuera de melds.
+- Si todas las cartas forman melds: corte con -10 puntos.
+- Chinchón: 7 cartas del mismo palo consecutivas (jokers llenan huecos) = victoria instantánea de la partida.
+- El jugador acumula los puntos del que cortó al revés (o su propio resto si cortó). Se elimina a los 100 puntos.
+- Partidas espejo: misma repartida de cartas, pero se intercambian manos y quien arranca. Neutraliza la aleatoriedad.
+
+BOT 1:
+${botConfigToPromptText(cfg0)}
+
+BOT 2:
+${botConfigToPromptText(cfg1)}
+
+RESULTADOS (${numGames} partidas espejo = ${total} partidas totales):
+- Partidas ganadas: ${cfg0.emoji} ${cfg0.name} ${gameWins[0]} (${((gameWins[0]/total)*100).toFixed(1)}%) vs ${cfg1.emoji} ${cfg1.name} ${gameWins[1]} (${((gameWins[1]/total)*100).toFixed(1)}%)
+- Rondas ganadas: ${cfg0.name} ${roundWins[0]} (${((roundWins[0]/totalRounds)*100).toFixed(1)}%) vs ${cfg1.name} ${roundWins[1]} (${((roundWins[1]/totalRounds)*100).toFixed(1)}%) — ${totalRounds} rondas totales
+- Promedio de rondas por partida: ${(totalRounds / total).toFixed(1)}
+- Doble espejo (gana ambas con misma repartida): ${cfg0.name} ${sweepWins[0]} (${((sweepWins[0]/totalPairs)*100).toFixed(1)}%), ${cfg1.name} ${sweepWins[1]} (${((sweepWins[1]/totalPairs)*100).toFixed(1)}%), empates ${sweepWins[2]}
+- Chinchones: ${cfg0.name} ${chinchonWins[0]} vs ${cfg1.name} ${chinchonWins[1]}
+
+PREGUNTAS:
+1. ¿Por qué creés que el bot ganador tuvo esa ventaja? Explicá en términos de las mecánicas del juego.
+2. ¿Qué cambios en la configuración del bot perdedor lo harían más competitivo?
+3. ¿Hay algún escenario donde la estrategia del bot perdedor sea superior?`;
+}
+
+function getBotConfig(idx, customConfigs) {
+if (idx < BUILTIN_BOT_CONFIGS.length) return BUILTIN_BOT_CONFIGS[idx];
+return customConfigs[idx - BUILTIN_BOT_CONFIGS.length] ?? BUILTIN_BOT_CONFIGS[0];
+}
+
 /* -- Sort helpers for play mode -- */
 function sortBySuit(hand) {
 return [...hand].sort((a, b) => {
@@ -1201,8 +1312,11 @@ const [roundWins, setRoundWins] = useState([0, 0]);
 const [gameWins, setGameWins] = useState([0, 0]);
 const [sweepWins, setSweepWins] = useState([0, 0, 0]); // [bot0 sweeps, bot1 sweeps, splits]
 const [totalRounds, setTotalRounds] = useState(0);
+const [winRateHistory, setWinRateHistory] = useState<{games: number, rate: number}[]>([]);
+const [chinchonWins, setChinchonWins] = useState([0, 0]);
 const [simRun, setSimRun] = useState(false);
 const [prog, setProg] = useState(0);
+const [promptCopied, setPromptCopied] = useState(false);
 const stopRef = useRef(false);
 
 // Match viewer
@@ -1224,7 +1338,9 @@ const [showBot, setShowBot] = useState(false);
 const runSim = useCallback(() => {
 stopRef.current = false; setSimRun(true); setProg(0); setChartData(null);
 setRoundWins([0, 0]); setGameWins([0, 0]); setSweepWins([0, 0, 0]); setTotalRounds(0);
-const fd = {}, dd = {}; let rw0 = 0, rw1 = 0, gw0 = 0, gw1 = 0, sw0 = 0, sw1 = 0, splits = 0, tr = 0, done = 0;
+setWinRateHistory([]); setChinchonWins([0, 0]); setPromptCopied(false);
+const fd = {}, dd = {}; let rw0 = 0, rw1 = 0, gw0 = 0, gw1 = 0, sw0 = 0, sw1 = 0, splits = 0, tr = 0, cc0 = 0, cc1 = 0, done = 0;
+const wrSnaps: {games: number, rate: number}[] = [];
 const n0 = BOT[simB0].name, n1 = BOT[simB1].name;
 const tick = () => {
 if (stopRef.current) { setSimRun(false); return; }
@@ -1232,27 +1348,28 @@ const batch = numGames <= 100 ? 1 : numGames <= 1000 ? 5 : numGames <= 10000 ? 5
 const end = Math.min(done + batch, numGames);
 for (let i = done; i < end; i++) {
 const [gA, gB] = simulateGamePair(simB0, simB1);
-// Track game wins
 const winnerA = gA.gameLoser === 0 ? 1 : 0;
 const winnerB = gB.gameLoser === 0 ? 1 : 0;
 if (winnerA === 0) gw0++; else gw1++;
 if (winnerB === 0) gw0++; else gw1++;
-// Track sweeps (same bot wins both mirror games)
 if (winnerA === 0 && winnerB === 0) sw0++;
 else if (winnerA === 1 && winnerB === 1) sw1++;
 else splits++;
-// Track rounds
 for (const game of [gA, gB]) {
 for (const rs of game.roundStats) {
 tr++;
-if (rs.winner === 0) { rw0++; fd[rs.cards] = (fd[rs.cards] || 0) + 1; }
-else { rw1++; dd[rs.cards] = (dd[rs.cards] || 0) + 1; }
+if (rs.winner === 0) { rw0++; fd[rs.cards] = (fd[rs.cards] || 0) + 1; } else { rw1++; dd[rs.cards] = (dd[rs.cards] || 0) + 1; }
+if (rs.chinchon) { if (rs.winner === 0) cc0++; else cc1++; }
 }
 }
 }
-done = end; setProg(Math.round(done / numGames * 100));
+done = end;
+const totalG = gw0 + gw1;
+if (totalG > 0) wrSnaps.push({ games: totalG, rate: (gw0 / totalG) * 100 });
+setProg(Math.round(done / numGames * 100));
 setChartData(buildChartData(fd, dd, n0, n1));
 setRoundWins([rw0, rw1]); setGameWins([gw0, gw1]); setSweepWins([sw0, sw1, splits]); setTotalRounds(tr);
+setWinRateHistory([...wrSnaps]); setChinchonWins([cc0, cc1]);
 if (done < numGames) setTimeout(tick, 0); else setSimRun(false);
 };
 setTimeout(tick, 0);
@@ -1433,12 +1550,81 @@ return (
         </div>
       )}
 
+      {winRateHistory.length >= 2 && (
+        <div className="w-full bg-gray-900 border border-gray-800 rounded-xl p-3 mb-4">
+          <h2 className="text-xs text-gray-500 text-center mb-1 uppercase tracking-wider">Evolución del winrate</h2>
+          <p className="text-xs text-gray-600 text-center mb-2">Si la línea se estabiliza, la muestra es suficiente</p>
+          <WinRateChart data={winRateHistory} bot0={BOT[simB0]} bot1={BOT[simB1]} />
+          <div className="flex justify-center gap-4 mt-1 text-xs">
+            <span className="inline-flex items-center gap-1" style={{ color: BOT[simB0].color }}>
+              <span className="rounded" style={{ width: "10px", height: "2px", background: BOT[simB0].color, display: "inline-block" }} />
+              {BOT[simB0].name}
+            </span>
+            <span className="inline-flex items-center gap-1" style={{ color: BOT[simB1].color }}>
+              <span className="rounded" style={{ width: "10px", height: "2px", background: BOT[simB1].color, display: "inline-block" }} />
+              {BOT[simB1].name}
+            </span>
+          </div>
+        </div>
+      )}
+
+      {(chinchonWins[0] + chinchonWins[1]) > 0 && (
+        <div className="w-full bg-gray-900 border border-gray-800 rounded-lg p-3 mb-4">
+          <h2 className="text-xs text-gray-500 text-center mb-2 uppercase tracking-wider">Chinchones</h2>
+          <div className="flex items-center justify-between">
+            <div className="text-center flex-1">
+              <div className="text-lg font-bold" style={{ color: BOT[simB0].color }}>{chinchonWins[0]}</div>
+              <div className="text-xs text-gray-500">{(chinchonWins[0] / (gameWins[0] + gameWins[1]) * 100).toFixed(2)}% de partidas</div>
+            </div>
+            <div className="text-center px-3 text-xs text-gray-600">🏆 por bot</div>
+            <div className="text-center flex-1">
+              <div className="text-lg font-bold" style={{ color: BOT[simB1].color }}>{chinchonWins[1]}</div>
+              <div className="text-xs text-gray-500">{(chinchonWins[1] / (gameWins[0] + gameWins[1]) * 100).toFixed(2)}% de partidas</div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {totalRounds > 0 && (
+        <div className="w-full bg-gray-900 border border-gray-800 rounded-lg p-3 mb-4">
+          <h2 className="text-xs text-gray-500 text-center mb-2 uppercase tracking-wider">Duración promedio</h2>
+          <div className="flex justify-center gap-6 text-center">
+            <div>
+              <div className="text-lg font-bold text-gray-200">{((gameWins[0] + gameWins[1]) > 0 ? totalRounds / (gameWins[0] + gameWins[1]) : 0).toFixed(1)}</div>
+              <div className="text-xs text-gray-500">rondas / partida</div>
+            </div>
+            <div>
+              <div className="text-lg font-bold text-gray-200">{(totalRounds > 0 ? (roundWins[0] + roundWins[1]) / totalRounds * 100 : 0).toFixed(0)}%</div>
+              <div className="text-xs text-gray-500">rondas con corte</div>
+            </div>
+          </div>
+        </div>
+      )}
+
       {chartData?.length > 0 && (
-        <div className="w-full bg-gray-900 rounded-xl border border-gray-800 p-3">
+        <div className="w-full bg-gray-900 rounded-xl border border-gray-800 p-3 mb-4">
           <h2 className="text-xs text-gray-400 text-center mb-2">Cartas agarradas por ronda</h2>
           <DrawsBarChart data={chartData} botA={BOT[simB0]} botB={BOT[simB1]} />
         </div>
       )}
+
+      {total > 0 && (
+        <div className="w-full flex justify-center mb-4">
+          <button onClick={() => {
+            const prompt = generateSimPrompt(
+              getBotConfig(simB0, customConfigs),
+              getBotConfig(simB1, customConfigs),
+              { gameWins, roundWins, sweepWins, chinchonWins, totalRounds, numGames }
+            );
+            navigator.clipboard.writeText(prompt);
+            setPromptCopied(true);
+            setTimeout(() => setPromptCopied(false), 3000);
+          }} className="flex items-center gap-2 bg-gray-800 hover:bg-gray-700 border border-gray-700 hover:border-gray-500 text-gray-300 hover:text-white px-4 py-2 rounded-lg text-xs font-medium transition-colors active:scale-95">
+            {promptCopied ? "✓ Prompt copiado al portapapeles" : "🤖 Exportar prompt para LLM"}
+          </button>
+        </div>
+      )}
+
       {!chartData && !simRun && <div className="text-gray-600 mt-6 text-sm">Elegí los bots y dale a <span className="text-emerald-500">Simular</span></div>}
     </div>
   )}
