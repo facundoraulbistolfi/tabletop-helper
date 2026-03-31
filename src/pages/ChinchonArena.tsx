@@ -230,6 +230,10 @@ const CUSTOM_COLORS = [
 { color: "#06b6d4", text: "text-cyan-400", bg: "bg-cyan-950", border: "border-cyan-800" },
 { color: "#f97316", text: "text-orange-400", bg: "bg-orange-950", border: "border-orange-800" },
 { color: "#14b8a6", text: "text-teal-400", bg: "bg-teal-950", border: "border-teal-800" },
+{ color: "#fb7185", text: "text-rose-400", bg: "bg-rose-950", border: "border-rose-800" },
+{ color: "#818cf8", text: "text-indigo-400", bg: "bg-indigo-950", border: "border-indigo-800" },
+{ color: "#a3e635", text: "text-lime-400", bg: "bg-lime-950", border: "border-lime-800" },
+{ color: "#c084fc", text: "text-purple-400", bg: "bg-purple-950", border: "border-purple-800" },
 ];
 const DEFAULT_SCORE_RULES = () => [{ minScore: 0, maxResto: 5 }, { minScore: 25, maxResto: 3 }, { minScore: 50, maxResto: 2 }, { minScore: 75, maxResto: 1 }];
 const DEFAULT_CUSTOM_CONFIG = () => ({
@@ -726,11 +730,11 @@ style={cfg.emoji === e ? { borderColor: c.color, background: `${c.color}15` } : 
 </div>
 <div className="mb-5">
 <label className="text-xs text-gray-500 block mb-1">Color</label>
-<div className="flex gap-2">
+<div className="flex flex-wrap gap-2">
 {CUSTOM_COLORS.map((cc, i) => (
 <button key={i} onClick={() => upd("colorIdx", i)}
-className={`w-8 h-8 rounded-full border-2 transition-all ${cfg.colorIdx === i ? "scale-110 ring-2" : "hover:scale-105"}`}
-style={{ background: cc.color, borderColor: cfg.colorIdx === i ? "#fff" : cc.color, ringColor: cc.color }} />
+className={`w-8 h-8 rounded-full border-2 transition-all ${cfg.colorIdx === i ? "scale-110 ring-2 ring-white/60" : "hover:scale-105"}`}
+style={{ background: cc.color, borderColor: cfg.colorIdx === i ? "#fff" : cc.color }} />
 ))}
 </div>
 </div>
@@ -797,13 +801,13 @@ className="accent-amber-500 mt-0.5 shrink-0" />
 
 <div className="mb-3">
 <span className="text-xs font-medium text-gray-300 block mb-0.5">Cartas sueltas máximas</span>
-<p className="text-xs text-gray-500 mb-2 leading-snug">Máximo de cartas fuera de melds al cortar. 0 = todas en juego · 1 = puede quedar una carta suelta.</p>
-<div className="flex gap-1">
-{[0, 1].map(v => (
+<p className="text-xs text-gray-500 mb-2 leading-snug">Máximo de cartas fuera de melds al cortar. 0 = todas en juego · 1 = una suelta · 2 = dos sueltas (agresivo).</p>
+<div className="flex gap-1 flex-wrap">
+{[0, 1, 2].map(v => (
 <button key={v} onClick={() => upd("cut.maxFree", v)}
 className={`px-3 py-1 rounded text-xs font-medium border transition-all ${cfg.cut.maxFree === v ? "border-2" : "border-gray-600 text-gray-400 hover:border-gray-500"}`}
 style={cfg.cut.maxFree === v ? { borderColor: c.color, color: c.color, background: `${c.color}15` } : {}}>
-{v === 0 ? "0 — sin sueltas" : "1 — una suelta"}
+{v === 0 ? "0 — sin sueltas" : v === 1 ? "1 — una suelta" : "2 — dos sueltas"}
 </button>
 ))}
 </div>
@@ -1125,9 +1129,28 @@ const [customConfigs, setCustomConfigs] = useState(() => loadCustomConfigs());
 const [editingBot, setEditingBot] = useState(null); // null | config object being edited
 const [viewingBot, setViewingBot] = useState(null); // null | config object being viewed
 const [showDescMode, setShowDescMode] = useState<"desc" | "config">("desc");
+const [benchmarks, setBenchmarks] = useState<Record<string, { wins: number; total: number }>>({});
+const [benchmarking, setBenchmarking] = useState<string | null>(null);
 useEffect(() => { saveCustomConfigs(customConfigs); syncBots(customConfigs); }, [customConfigs]);
 // Initial sync on mount
 useEffect(() => { syncBots(customConfigs); }, []);
+
+const runBenchmark = useCallback((cfg) => {
+  const botIdx = BOT.findIndex(b => b.id === cfg.id);
+  if (botIdx < 0) return;
+  setBenchmarking(cfg.id);
+  setTimeout(() => {
+    let wins = 0, total = 0;
+    for (let i = 0; i < 25; i++) {
+      const [gA, gB] = simulateGamePair(botIdx, 0);
+      if (gA.gameLoser === 1) wins++;
+      if (gB.gameLoser === 1) wins++;
+      total += 2;
+    }
+    setBenchmarks(prev => ({ ...prev, [cfg.id]: { wins, total } }));
+    setBenchmarking(null);
+  }, 0);
+}, []);
 
 // Sim
 const [simB0, setSimB0] = useState(0);
@@ -1549,11 +1572,25 @@ return (
                           ? (cfg.description || <span className="italic text-gray-600">{generateDesc(cfg)}</span>)
                           : generateDesc(cfg)}
                       </div>
+                      {benchmarks[cfg.id] && (
+                        <div className="mb-1.5">
+                          <div className="text-xs font-medium" style={{ color: benchmarks[cfg.id].wins / benchmarks[cfg.id].total >= 0.5 ? "#4ade80" : "#f87171" }}>
+                            {Math.round(benchmarks[cfg.id].wins / benchmarks[cfg.id].total * 100)}% vs FacuTron
+                          </div>
+                          <div className="w-full h-1 bg-gray-800 rounded-full mt-0.5 overflow-hidden">
+                            <div className="h-full rounded-full" style={{ width: `${Math.round(benchmarks[cfg.id].wins / benchmarks[cfg.id].total * 100)}%`, background: benchmarks[cfg.id].wins / benchmarks[cfg.id].total >= 0.5 ? "#4ade80" : "#f87171" }} />
+                          </div>
+                        </div>
+                      )}
                       <div className="flex gap-1.5 flex-wrap">
                         <button onClick={() => setViewingBot(cfg)}
                           className="text-xs text-gray-400 hover:text-gray-200 bg-gray-800 px-2 py-0.5 rounded">Ver</button>
                         <button onClick={() => setEditingBot(JSON.parse(JSON.stringify(cfg)))}
                           className="text-xs text-gray-400 hover:text-gray-200 bg-gray-800 px-2 py-0.5 rounded">Editar</button>
+                        <button onClick={() => runBenchmark(cfg)} disabled={benchmarking === cfg.id}
+                          className="text-xs text-amber-400 hover:text-amber-200 bg-gray-800 px-2 py-0.5 rounded disabled:opacity-50">
+                          {benchmarking === cfg.id ? "..." : "⚡ Probar"}
+                        </button>
                         <button onClick={() => setCustomConfigs(prev => prev.filter(c => c.id !== cfg.id))}
                           className="text-xs text-red-400 hover:text-red-300 bg-gray-800 px-2 py-0.5 rounded">Borrar</button>
                       </div>
