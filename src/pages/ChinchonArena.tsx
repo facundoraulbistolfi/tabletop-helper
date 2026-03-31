@@ -604,8 +604,48 @@ stroke={v === 50 ? "#4b5563" : "#1f2937"} strokeWidth={v === 50 ? 1 : 0.5} strok
 <text x={W - PAD.right} y={H - 5} textAnchor="middle" fill="#4b5563" fontSize="8">{data[data.length - 1].games}</text>
 <path d={path1} fill="none" stroke={bot1.color} strokeWidth="1.5" opacity="0.75" />
 <path d={path0} fill="none" stroke={bot0.color} strokeWidth="1.5" opacity="0.75" />
-<text x={W - PAD.right + 2} y={toY(data[data.length - 1].rate) + 3.5} fill={bot0.color} fontSize="8">{data[data.length - 1].rate.toFixed(1)}%</text>
-<text x={W - PAD.right + 2} y={toY(100 - data[data.length - 1].rate) + 3.5} fill={bot1.color} fontSize="8">{(100 - data[data.length - 1].rate).toFixed(1)}%</text>
+<text x={W - PAD.right + 2} y={toY(data[data.length - 1].rate) + 3.5} fill={bot0.color} fontSize="8">{data[data.length - 1].rate.toFixed(4)}%</text>
+<text x={W - PAD.right + 2} y={toY(100 - data[data.length - 1].rate) + 3.5} fill={bot1.color} fontSize="8">{(100 - data[data.length - 1].rate).toFixed(4)}%</text>
+</svg>
+);
+}
+
+/* -- Sweep rate evolution chart -- */
+function SweepRateChart({ data, bot0, bot1 }) {
+if (data.length < 2) return null;
+const W = 500, H = 130;
+const PAD = { top: 12, right: 14, bottom: 22, left: 36 };
+const plotW = W - PAD.left - PAD.right;
+const plotH = H - PAD.top - PAD.bottom;
+const allRates = data.flatMap(d => [d.rate0, d.rate1]);
+const minR = Math.max(0, Math.floor((Math.min(...allRates) - 4) / 5) * 5);
+const maxR = Math.min(100, Math.ceil((Math.max(...allRates) + 4) / 5) * 5);
+const rng = maxR - minR || 1;
+const toX = (i) => PAD.left + (i / (data.length - 1)) * plotW;
+const toY = (r) => PAD.top + (1 - (r - minR) / rng) * plotH;
+const path0 = data.map((d, i) => `${i === 0 ? "M" : "L"}${toX(i).toFixed(1)},${toY(d.rate0).toFixed(1)}`).join(" ");
+const path1 = data.map((d, i) => `${i === 0 ? "M" : "L"}${toX(i).toFixed(1)},${toY(d.rate1).toFixed(1)}`).join(" ");
+const midTick = Math.floor(data.length / 2);
+return (
+<svg width="100%" viewBox={`0 0 ${W} ${H}`} style={{ display: "block" }}>
+{[25, 50, 75].filter(v => v > minR && v < maxR).map(v => (
+<g key={v}>
+<line x1={PAD.left} x2={W - PAD.right} y1={toY(v)} y2={toY(v)}
+stroke={v === 50 ? "#4b5563" : "#1f2937"} strokeWidth={v === 50 ? 1 : 0.5} strokeDasharray={v === 50 ? "4,3" : undefined} />
+<text x={PAD.left - 4} y={toY(v) + 3.5} textAnchor="end" fill="#6b7280" fontSize="9">{v}%</text>
+</g>
+))}
+<text x={PAD.left - 4} y={PAD.top + 4} textAnchor="end" fill="#4b5563" fontSize="9">{maxR}%</text>
+<text x={PAD.left - 4} y={H - PAD.bottom + 4} textAnchor="end" fill="#4b5563" fontSize="9">{minR}%</text>
+<line x1={PAD.left} x2={PAD.left} y1={PAD.top} y2={H - PAD.bottom} stroke="#374151" strokeWidth="1" />
+<line x1={PAD.left} x2={W - PAD.right} y1={H - PAD.bottom} y2={H - PAD.bottom} stroke="#374151" strokeWidth="1" />
+<text x={PAD.left} y={H - 5} textAnchor="middle" fill="#4b5563" fontSize="8">{data[0].pairs}</text>
+<text x={PAD.left + plotW / 2} y={H - 5} textAnchor="middle" fill="#374151" fontSize="8">{data[midTick].pairs}</text>
+<text x={W - PAD.right} y={H - 5} textAnchor="middle" fill="#4b5563" fontSize="8">{data[data.length - 1].pairs}</text>
+<path d={path1} fill="none" stroke={bot1.color} strokeWidth="1.5" opacity="0.75" />
+<path d={path0} fill="none" stroke={bot0.color} strokeWidth="1.5" opacity="0.75" />
+<text x={W - PAD.right + 2} y={toY(data[data.length - 1].rate0) + 3.5} fill={bot0.color} fontSize="8">{data[data.length - 1].rate0.toFixed(4)}%</text>
+<text x={W - PAD.right + 2} y={toY(data[data.length - 1].rate1) + 3.5} fill={bot1.color} fontSize="8">{data[data.length - 1].rate1.toFixed(4)}%</text>
 </svg>
 );
 }
@@ -1218,6 +1258,7 @@ const [gameWins, setGameWins] = useState([0, 0]);
 const [sweepWins, setSweepWins] = useState([0, 0, 0]); // [bot0 sweeps, bot1 sweeps, splits]
 const [totalRounds, setTotalRounds] = useState(0);
 const [winRateHistory, setWinRateHistory] = useState<{games: number, rate: number}[]>([]);
+const [sweepRateHistory, setSweepRateHistory] = useState<{pairs: number, rate0: number, rate1: number}[]>([]);
 const [chinchonWins, setChinchonWins] = useState([0, 0]);
 const [simRun, setSimRun] = useState(false);
 const [prog, setProg] = useState(0);
@@ -1243,9 +1284,10 @@ const [showBot, setShowBot] = useState(false);
 const runSim = useCallback(() => {
 stopRef.current = false; setSimRun(true); setProg(0); setChartData(null);
 setRoundWins([0, 0]); setGameWins([0, 0]); setSweepWins([0, 0, 0]); setTotalRounds(0);
-setWinRateHistory([]); setChinchonWins([0, 0]); setPromptCopied(false);
+setWinRateHistory([]); setSweepRateHistory([]); setChinchonWins([0, 0]); setPromptCopied(false);
 const fd = {}, dd = {}; let rw0 = 0, rw1 = 0, gw0 = 0, gw1 = 0, sw0 = 0, sw1 = 0, splits = 0, tr = 0, cc0 = 0, cc1 = 0, done = 0;
 const wrSnaps: {games: number, rate: number}[] = [];
+const swSnaps: {pairs: number, rate0: number, rate1: number}[] = [];
 const n0 = BOT[simB0].name, n1 = BOT[simB1].name;
 const tick = () => {
 if (stopRef.current) { setSimRun(false); return; }
@@ -1271,14 +1313,68 @@ if (rs.chinchon) { if (rs.winner === 0) cc0++; else cc1++; }
 done = end;
 const totalG = gw0 + gw1;
 if (totalG > 0) wrSnaps.push({ games: totalG, rate: (gw0 / totalG) * 100 });
+const totalPairs = sw0 + sw1 + splits;
+if (totalPairs > 0) swSnaps.push({ pairs: totalPairs, rate0: (sw0 / totalPairs) * 100, rate1: (sw1 / totalPairs) * 100 });
 setProg(Math.round(done / numGames * 100));
 setChartData(buildChartData(fd, dd, n0, n1));
 setRoundWins([rw0, rw1]); setGameWins([gw0, gw1]); setSweepWins([sw0, sw1, splits]); setTotalRounds(tr);
-setWinRateHistory([...wrSnaps]); setChinchonWins([cc0, cc1]);
+setWinRateHistory([...wrSnaps]); setSweepRateHistory([...swSnaps]); setChinchonWins([cc0, cc1]);
 if (done < numGames) setTimeout(tick, 0); else setSimRun(false);
 };
 setTimeout(tick, 0);
 }, [numGames, simB0, simB1]);
+
+const runSimUntilStable = useCallback(() => {
+stopRef.current = false; setSimRun(true); setProg(0); setChartData(null);
+setRoundWins([0, 0]); setGameWins([0, 0]); setSweepWins([0, 0, 0]); setTotalRounds(0);
+setWinRateHistory([]); setSweepRateHistory([]); setChinchonWins([0, 0]); setPromptCopied(false);
+const fd = {}, dd = {}; let rw0 = 0, rw1 = 0, gw0 = 0, gw1 = 0, sw0 = 0, sw1 = 0, splits = 0, tr = 0, cc0 = 0, cc1 = 0, done = 0;
+const wrSnaps: {games: number, rate: number}[] = [];
+const swSnaps: {pairs: number, rate0: number, rate1: number}[] = [];
+const n0 = BOT[simB0].name, n1 = BOT[simB1].name;
+const STABLE_WINDOW = 20;
+const STABLE_THRESHOLD = 0.3; // pp std dev
+const MIN_GAMES = 200;
+const BATCH = 20;
+const isStable = () => {
+  if (wrSnaps.length < STABLE_WINDOW || done < MIN_GAMES) return false;
+  const recent = wrSnaps.slice(-STABLE_WINDOW).map(s => s.rate);
+  const mean = recent.reduce((a, b) => a + b, 0) / recent.length;
+  const stddev = Math.sqrt(recent.reduce((a, b) => a + (b - mean) ** 2, 0) / recent.length);
+  return stddev < STABLE_THRESHOLD;
+};
+const tick = () => {
+if (stopRef.current) { setSimRun(false); return; }
+for (let i = 0; i < BATCH; i++) {
+const [gA, gB] = simulateGamePair(simB0, simB1);
+const winnerA = gA.gameLoser === 0 ? 1 : 0;
+const winnerB = gB.gameLoser === 0 ? 1 : 0;
+if (winnerA === 0) gw0++; else gw1++;
+if (winnerB === 0) gw0++; else gw1++;
+if (winnerA === 0 && winnerB === 0) sw0++;
+else if (winnerA === 1 && winnerB === 1) sw1++;
+else splits++;
+for (const game of [gA, gB]) {
+for (const rs of game.roundStats) {
+tr++;
+if (rs.winner === 0) { rw0++; fd[rs.cards] = (fd[rs.cards] || 0) + 1; } else { rw1++; dd[rs.cards] = (dd[rs.cards] || 0) + 1; }
+if (rs.chinchon) { if (rs.winner === 0) cc0++; else cc1++; }
+}
+}
+done++;
+}
+const totalG = gw0 + gw1;
+if (totalG > 0) wrSnaps.push({ games: totalG, rate: (gw0 / totalG) * 100 });
+const totalPairs = sw0 + sw1 + splits;
+if (totalPairs > 0) swSnaps.push({ pairs: totalPairs, rate0: (sw0 / totalPairs) * 100, rate1: (sw1 / totalPairs) * 100 });
+setProg(Math.min(99, Math.round((done / Math.max(done, MIN_GAMES)) * 50 + (isStable() ? 50 : 0))));
+setChartData(buildChartData(fd, dd, n0, n1));
+setRoundWins([rw0, rw1]); setGameWins([gw0, gw1]); setSweepWins([sw0, sw1, splits]); setTotalRounds(tr);
+setWinRateHistory([...wrSnaps]); setSweepRateHistory([...swSnaps]); setChinchonWins([cc0, cc1]);
+if (isStable()) { setSimRun(false); setProg(100); } else setTimeout(tick, 0);
+};
+setTimeout(tick, 0);
+}, [simB0, simB1]);
 
 // -- Match viewer --
 const replay = replayPair ? (matchRound === "A" ? replayPair.replayA : replayPair.replayB) : null;
@@ -1367,7 +1463,7 @@ const isLast = replay && si >= replay.length - 1;
 const total = gameWins[0] + gameWins[1];
 const totalR = totalRounds;
 let canPlayerCut = false;
-if (g?.phase === "playerDiscard" && g.pHand.length <= 7) {
+if (g?.phase === "playerDiscard" && g.pHand.length <= 8) {
 canPlayerCut = g.pHand.some((c, i) => {
 if (isJoker(c)) return false;
 const test = g.pHand.filter((_, j) => j !== i);
@@ -1415,8 +1511,12 @@ return (
             </button>
           ))}
         </div>
-        {!simRun ? <button onClick={runSim} className="bg-emerald-600 hover:bg-emerald-500 text-white px-5 py-1.5 rounded-md text-sm font-semibold active:scale-95 mt-1">Simular {numGames >= 1000 ? `${numGames / 1000}k` : numGames} partidas</button>
-          : <button onClick={() => { stopRef.current = true; }} className="bg-red-600 hover:bg-red-500 text-white px-5 py-1.5 rounded-md text-sm font-semibold mt-1">Parar ({prog}%)</button>}
+        {!simRun ? (
+          <div className="flex gap-2 mt-1 flex-wrap justify-center">
+            <button onClick={runSim} className="bg-emerald-600 hover:bg-emerald-500 text-white px-5 py-1.5 rounded-md text-sm font-semibold active:scale-95">Simular {numGames >= 1000 ? `${numGames / 1000}k` : numGames} partidas</button>
+            <button onClick={runSimUntilStable} className="bg-violet-700 hover:bg-violet-600 text-white px-4 py-1.5 rounded-md text-sm font-semibold active:scale-95" title="Corre hasta que el winrate se estabilice (desvío estándar < 0.3pp en las últimas 20 muestras)">⚖️ Auto-estabilizar</button>
+          </div>
+        ) : <button onClick={() => { stopRef.current = true; }} className="bg-red-600 hover:bg-red-500 text-white px-5 py-1.5 rounded-md text-sm font-semibold mt-1">Parar ({prog}%)</button>}
       </div>
       <div className="text-xs text-gray-600 mb-3 text-center">Cada sim = 2 partidas simultáneas con rondas espejo · Chinchón = gana partida</div>
       {simRun && <div className="w-full h-1 bg-gray-800 rounded-full mb-3 overflow-hidden"><div className="h-full bg-gradient-to-r from-emerald-500 to-violet-500 transition-all" style={{ width: `${prog}%` }} /></div>}
@@ -1425,9 +1525,9 @@ return (
         <div className="w-full bg-gray-900 border border-gray-800 rounded-xl p-4 mb-4">
           <h2 className="text-xs text-gray-500 text-center mb-3 uppercase tracking-wider">Partidas ganadas</h2>
           <div className="flex items-center justify-between">
-            <div className="text-center flex-1"><div className="text-3xl font-bold" style={{ color: BOT[simB0].color }}>{gameWins[0]}</div><div className="text-xs text-gray-500">{((gameWins[0] / total) * 100).toFixed(1)}%</div><div className="text-xs mt-0.5" style={{ color: BOT[simB0].color }}>{BOT[simB0].name}</div></div>
+            <div className="text-center flex-1"><div className="text-3xl font-bold" style={{ color: BOT[simB0].color }}>{gameWins[0]}</div><div className="text-xs text-gray-500">{((gameWins[0] / total) * 100).toFixed(4)}%</div><div className="text-xs mt-0.5" style={{ color: BOT[simB0].color }}>{BOT[simB0].name}</div></div>
             <div className="text-center px-3"><div className="text-xs text-gray-600">{total} partidas</div><div className="text-gray-700 text-xl">-</div></div>
-            <div className="text-center flex-1"><div className="text-3xl font-bold" style={{ color: BOT[simB1].color }}>{gameWins[1]}</div><div className="text-xs text-gray-500">{((gameWins[1] / total) * 100).toFixed(1)}%</div><div className="text-xs mt-0.5" style={{ color: BOT[simB1].color }}>{BOT[simB1].name}</div></div>
+            <div className="text-center flex-1"><div className="text-3xl font-bold" style={{ color: BOT[simB1].color }}>{gameWins[1]}</div><div className="text-xs text-gray-500">{((gameWins[1] / total) * 100).toFixed(4)}%</div><div className="text-xs mt-0.5" style={{ color: BOT[simB1].color }}>{BOT[simB1].name}</div></div>
           </div>
         </div>
       )}
@@ -1436,9 +1536,9 @@ return (
         <div className="w-full bg-gray-900 border border-gray-800 rounded-lg p-3 mb-4">
           <h2 className="text-xs text-gray-500 text-center mb-2 uppercase tracking-wider">Rondas ganadas</h2>
           <div className="flex items-center justify-between">
-            <div className="text-center flex-1"><div className="text-lg font-bold" style={{ color: BOT[simB0].color }}>{roundWins[0]}</div><div className="text-xs text-gray-500">{((roundWins[0] / totalR) * 100).toFixed(1)}%</div></div>
+            <div className="text-center flex-1"><div className="text-lg font-bold" style={{ color: BOT[simB0].color }}>{roundWins[0]}</div><div className="text-xs text-gray-500">{((roundWins[0] / totalR) * 100).toFixed(4)}%</div></div>
             <div className="text-center px-3"><div className="text-xs text-gray-600">{totalR} rondas</div></div>
-            <div className="text-center flex-1"><div className="text-lg font-bold" style={{ color: BOT[simB1].color }}>{roundWins[1]}</div><div className="text-xs text-gray-500">{((roundWins[1] / totalR) * 100).toFixed(1)}%</div></div>
+            <div className="text-center flex-1"><div className="text-lg font-bold" style={{ color: BOT[simB1].color }}>{roundWins[1]}</div><div className="text-xs text-gray-500">{((roundWins[1] / totalR) * 100).toFixed(4)}%</div></div>
           </div>
         </div>
       )}
@@ -1450,7 +1550,7 @@ return (
           <div className="flex items-center justify-between">
             <div className="text-center flex-1">
               <div className="text-lg font-bold" style={{ color: BOT[simB0].color }}>{sweepWins[0]}</div>
-              <div className="text-xs text-gray-500">{(sweepWins[0] + sweepWins[1] + sweepWins[2]) > 0 ? ((sweepWins[0] / (sweepWins[0] + sweepWins[1] + sweepWins[2])) * 100).toFixed(1) : 0}%</div>
+              <div className="text-xs text-gray-500">{(sweepWins[0] + sweepWins[1] + sweepWins[2]) > 0 ? ((sweepWins[0] / (sweepWins[0] + sweepWins[1] + sweepWins[2])) * 100).toFixed(4) : "0.0000"}%</div>
             </div>
             <div className="text-center px-3">
               <div className="text-xs text-gray-500">{sweepWins[2]} empates</div>
@@ -1458,7 +1558,7 @@ return (
             </div>
             <div className="text-center flex-1">
               <div className="text-lg font-bold" style={{ color: BOT[simB1].color }}>{sweepWins[1]}</div>
-              <div className="text-xs text-gray-500">{(sweepWins[0] + sweepWins[1] + sweepWins[2]) > 0 ? ((sweepWins[1] / (sweepWins[0] + sweepWins[1] + sweepWins[2])) * 100).toFixed(1) : 0}%</div>
+              <div className="text-xs text-gray-500">{(sweepWins[0] + sweepWins[1] + sweepWins[2]) > 0 ? ((sweepWins[1] / (sweepWins[0] + sweepWins[1] + sweepWins[2])) * 100).toFixed(4) : "0.0000"}%</div>
             </div>
           </div>
         </div>
@@ -1482,18 +1582,36 @@ return (
         </div>
       )}
 
+      {sweepRateHistory.length >= 2 && (
+        <div className="w-full bg-gray-900 border border-yellow-900/30 rounded-xl p-3 mb-4">
+          <h2 className="text-xs text-yellow-600 text-center mb-1 uppercase tracking-wider">Evolución del doble espejo</h2>
+          <p className="text-xs text-gray-600 text-center mb-2">% de corridas donde cada bot gana ambas partidas espejo</p>
+          <SweepRateChart data={sweepRateHistory} bot0={BOT[simB0]} bot1={BOT[simB1]} />
+          <div className="flex justify-center gap-4 mt-1 text-xs">
+            <span className="inline-flex items-center gap-1" style={{ color: BOT[simB0].color }}>
+              <span className="rounded" style={{ width: "10px", height: "2px", background: BOT[simB0].color, display: "inline-block" }} />
+              {BOT[simB0].name}
+            </span>
+            <span className="inline-flex items-center gap-1" style={{ color: BOT[simB1].color }}>
+              <span className="rounded" style={{ width: "10px", height: "2px", background: BOT[simB1].color, display: "inline-block" }} />
+              {BOT[simB1].name}
+            </span>
+          </div>
+        </div>
+      )}
+
       {(chinchonWins[0] + chinchonWins[1]) > 0 && (
         <div className="w-full bg-gray-900 border border-gray-800 rounded-lg p-3 mb-4">
           <h2 className="text-xs text-gray-500 text-center mb-2 uppercase tracking-wider">Chinchones</h2>
           <div className="flex items-center justify-between">
             <div className="text-center flex-1">
               <div className="text-lg font-bold" style={{ color: BOT[simB0].color }}>{chinchonWins[0]}</div>
-              <div className="text-xs text-gray-500">{(chinchonWins[0] / (gameWins[0] + gameWins[1]) * 100).toFixed(2)}% de partidas</div>
+              <div className="text-xs text-gray-500">{(chinchonWins[0] / (gameWins[0] + gameWins[1]) * 100).toFixed(4)}% de partidas</div>
             </div>
             <div className="text-center px-3 text-xs text-gray-600">🏆 por bot</div>
             <div className="text-center flex-1">
               <div className="text-lg font-bold" style={{ color: BOT[simB1].color }}>{chinchonWins[1]}</div>
-              <div className="text-xs text-gray-500">{(chinchonWins[1] / (gameWins[0] + gameWins[1]) * 100).toFixed(2)}% de partidas</div>
+              <div className="text-xs text-gray-500">{(chinchonWins[1] / (gameWins[0] + gameWins[1]) * 100).toFixed(4)}% de partidas</div>
             </div>
           </div>
         </div>
