@@ -1263,6 +1263,13 @@ className="bg-gray-700 hover:bg-gray-600 text-white px-4 py-2 rounded-lg text-sm
       <div className="flex justify-end mt-1 mb-2">
         <button onClick={handleSpy} className="text-xs text-gray-600 hover:text-gray-400">{showBot ? "Ocultar cartas" : "Espiar 👀"}</button>
       </div>
+      {g.botLastAction && (
+        <div className="text-xs text-center text-gray-500 mb-2 bg-gray-900/60 border border-gray-800 rounded px-2 py-1.5">
+          <span style={{ color: bot.color }}>{bot.name}</span>
+          {g.botLastAction.drew === "initial" ? " descartó " : g.botLastAction.drew === "discard" ? " robó del descarte y tiró " : " robó del mazo y tiró "}
+          <span className="font-mono text-gray-300">{cardLabel(g.botLastAction.discarded)}</span>
+        </div>
+      )}
       <div className="flex items-center justify-center gap-4 mb-3">
         <div className={`flex flex-col items-center ${g.phase === "playerDraw" && g.turn === 0 ? "cursor-pointer" : ""}`} onClick={() => g.phase === "playerDraw" && g.turn === 0 && playerDraw("deck")}>
           <div className={`w-11 h-16 bg-indigo-900 border-2 ${g.phase === "playerDraw" && g.turn === 0 ? "border-indigo-400 ring-2 ring-indigo-400/30" : "border-indigo-700"} rounded flex items-center justify-center`}>
@@ -1276,24 +1283,49 @@ className="bg-gray-700 hover:bg-gray-600 text-white px-4 py-2 rounded-lg text-sm
         </div>
       </div>
       {g.phase === "playerDraw" && g.turn === 0 && <div className="text-center text-sm text-sky-400 mb-2">Agarrá del mazo o del descarte</div>}
-      {g.phase === "playerDiscard" && <div className="text-center text-sm text-sky-400 mb-2">{g.pHand.length === 8 ? "Inicio: tenés 8 cartas, descartá una para empezar" : g.selectedIdx !== null ? "Descartá o cortá" : "Tocá una carta para descartar"}</div>}
+      {g.phase === "playerDiscard" && <div className="text-center text-sm text-sky-400 mb-2">{g.pHand.length === 8 ? "Inicio: tenés 8 cartas, tocá una para descartarla" : g.cutMode ? "¿Qué carta tirás para cortar?" : "Tocá una carta para descartarla"}</div>}
       {g.phase === "botTurn" && <div className="text-center text-sm text-gray-500 mb-2">{bot.name} está jugando...</div>}
       {g.message && <div className="text-center text-xs text-red-400 mb-2">{g.message}</div>}
 
-      <HandRow hand={g.pHand} meldsData={pML} label="Tu mano" color="text-sky-400" bgClass="bg-sky-950" borderClass="border-sky-800"
-        onClick={g.phase === "playerDiscard" ? selectCard : null} selectedIdx={g.selectedIdx} />
+      <div className="rounded-lg p-3 bg-sky-950 border border-sky-800">
+        <div className="flex items-center justify-between mb-2">
+          <span className="font-bold text-sm text-sky-400">Tu mano</span>
+          {pML && <span className="text-xs text-gray-500">Sueltas: {pML.minFree} · Resto: {pML.resto}</span>}
+        </div>
+        <div className="flex flex-wrap gap-1">
+          {g.pHand.map((c, i) => {
+            const meldSet = new Set((pML?.meldsCut || pML?.melds || []).flat());
+            const inMeld = meldSet.has(i);
+            const isDraw = g.drawnCard && sameCard(c, g.drawnCard);
+            const canDrag = g.phase === "playerDiscard";
+            return (
+              <div
+                key={`${c.rank}-${c.suit}-${i}`}
+                draggable={canDrag}
+                onDragStart={(e) => { dragSrcRef.current = i; dragOccurred.current = false; e.dataTransfer.effectAllowed = "move"; }}
+                onDragOver={(e) => { e.preventDefault(); e.dataTransfer.dropEffect = "move"; }}
+                onDrop={(e) => { e.preventDefault(); if (dragSrcRef.current === null || dragSrcRef.current === i) return; dragOccurred.current = true; const newHand = [...g.pHand]; const [moved] = newHand.splice(dragSrcRef.current, 1); newHand.splice(i, 0, moved); dragSrcRef.current = null; setG({ ...g, pHand: newHand, selectedIdx: null }); }}
+                onDragEnd={() => { setTimeout(() => { dragOccurred.current = false; }, 50); dragSrcRef.current = null; }}
+              >
+                <CardC card={c} inMeld={inMeld} highlight={isDraw ? "drawn" : null}
+                  onClick={g.phase === "playerDiscard" ? () => { if (!dragOccurred.current) selectCard(i); } : null}
+                  faceDown={false} />
+              </div>
+            );
+          })}
+        </div>
+      </div>
 
-      {/* Sort + action buttons */}
+      {/* Sort + cut button */}
       <div className="flex items-center justify-between mt-2">
         <div className="flex gap-1">
           <button onClick={() => sortHand("suit")} className="text-xs text-gray-500 hover:text-gray-300 bg-gray-800 px-2 py-1 rounded">Por palo</button>
           <button onClick={() => sortHand("rank")} className="text-xs text-gray-500 hover:text-gray-300 bg-gray-800 px-2 py-1 rounded">Por número</button>
         </div>
-        {g.phase === "playerDiscard" && g.selectedIdx !== null && (
-          <div className="flex gap-2">
-            <button onClick={playerDiscard} className="bg-gray-700 hover:bg-gray-600 text-white px-3 py-1 rounded-md text-sm font-medium">Descartar</button>
-            {canPlayerCut && <button onClick={playerCut} className="bg-yellow-600 hover:bg-yellow-500 text-white px-3 py-1 rounded-md text-sm font-bold animate-pulse">¡Cortar!</button>}
-          </div>
+        {g.phase === "playerDiscard" && canPlayerCut && (
+          <button onClick={toggleCutMode} className={`px-4 py-1.5 rounded-lg font-bold text-sm transition-all active:scale-95 ${g.cutMode ? "bg-yellow-400 text-black ring-2 ring-yellow-300" : "bg-yellow-700 hover:bg-yellow-600 text-white animate-pulse"}`}>
+            {g.cutMode ? "✂️ Tocá qué carta tirás" : "✂️ ¡Cortar!"}
+          </button>
         )}
       </div>
     </div>
@@ -1387,6 +1419,8 @@ const [botChoice, setBotChoice] = useState(null);
 const [g, setG] = useState(null);
 const [history, setHistory] = useState([]);
 const [showBot, setShowBot] = useState(false);
+const dragSrcRef = useRef(null);
+const dragOccurred = useRef(false);
 
 // -- Sim --
 const runSim = useCallback(() => {
@@ -1457,28 +1491,32 @@ let card;
 if (src === "discard" && ng.discardPile.length) card = ng.discardPile.pop(); else if (ng.deck.length) card = ng.deck.pop(); else return;
 ng.pHand.push(card); ng.drawnCard = card; ng.phase = "playerDiscard"; ng.selectedIdx = null; ng.message = null; setG(ng);
 };
-const selectCard = (i) => { if (!g || g.phase !== "playerDiscard") return; setG({ ...g, selectedIdx: g.selectedIdx === i ? null : i }); };
-const playerDiscard = () => {
-if (!g || g.phase !== "playerDiscard" || g.selectedIdx === null) return;
+const playerDiscardWithIdx = (idx) => {
+if (!g || g.phase !== "playerDiscard") return;
 const ng = { ...g, pHand: [...g.pHand], discardPile: [...g.discardPile] };
-if (isJoker(ng.pHand[ng.selectedIdx])) { setG({ ...g, message: "No podés descartar comodines" }); return; }
-const disc = ng.pHand.splice(ng.selectedIdx, 1)[0]; ng.discardPile.push(disc);
-ng.selectedIdx = null; ng.drawnCard = null; ng.phase = "botTurn"; ng.turn = 1; ng.message = null; setG(ng);
+if (isJoker(ng.pHand[idx])) { setG({ ...g, message: "No podés descartar comodines" }); return; }
+const disc = ng.pHand.splice(idx, 1)[0]; ng.discardPile.push(disc);
+ng.selectedIdx = null; ng.drawnCard = null; ng.phase = "botTurn"; ng.turn = 1; ng.message = null; ng.cutMode = false; setG(ng);
 };
-const playerCut = () => {
-if (!g || g.phase !== "playerDiscard" || g.selectedIdx === null) return;
-if (isJoker(g.pHand[g.selectedIdx])) { setG({ ...g, message: "No podés cortar tirando un comodín" }); return; }
-const testHand = g.pHand.filter((_, i) => i !== g.selectedIdx);
+const playerCutWithIdx = (idx) => {
+if (!g || g.phase !== "playerDiscard") return;
+if (isJoker(g.pHand[idx])) { setG({ ...g, message: "No podés cortar tirando un comodín" }); return; }
+const testHand = g.pHand.filter((_, i) => i !== idx);
 const f7 = findBestMelds(testHand);
 if (f7.minFree > 1) { setG({ ...g, message: "No podés cortar — más de 1 carta suelta" }); return; }
 if (f7.resto > 5) { setG({ ...g, message: "No podés cortar — el resto supera 5 puntos" }); return; }
 const ng = { ...g, pHand: [...g.pHand], discardPile: [...g.discardPile] };
-const disc = ng.pHand.splice(ng.selectedIdx, 1)[0]; ng.discardPile.push(disc);
+const disc = ng.pHand.splice(idx, 1)[0]; ng.discardPile.push(disc);
 const cs = cutScore(ng.pHand); const bM = findBestMelds(ng.bHand);
-ng.phase = "roundEnd"; ng.drawnCard = null; ng.selectedIdx = null;
+ng.phase = "roundEnd"; ng.drawnCard = null; ng.selectedIdx = null; ng.cutMode = false;
 ng.roundResult = { cutter: "player", pScore: cs.score, bScore: bM.resto, chinchon: cs.chinchon };
 setG(ng);
 };
+const selectCard = (i) => {
+if (!g || g.phase !== "playerDiscard") return;
+if (g.cutMode) { playerCutWithIdx(i); } else { playerDiscardWithIdx(i); }
+};
+const toggleCutMode = () => { if (!g) return; setG({ ...g, cutMode: !g.cutMode, message: null }); };
 const sortHand = (mode) => {
 if (!g) return;
 const sorted = mode === "suit" ? sortBySuit(g.pHand) : sortByRank(g.pHand);
@@ -1512,10 +1550,13 @@ const isLast = replay && si >= replay.length - 1;
 const total = gameWins[0] + gameWins[1];
 const totalR = totalRounds;
 let canPlayerCut = false;
-if (g?.phase === "playerDiscard" && g.selectedIdx !== null) {
-const test = g.pHand.filter((_, i) => i !== g.selectedIdx);
-const testMelds = findBestMelds(test);
-canPlayerCut = !isJoker(g.pHand[g.selectedIdx]) && testMelds.minFree <= 1 && testMelds.resto <= 5;
+if (g?.phase === "playerDiscard" && g.pHand.length <= 7) {
+canPlayerCut = g.pHand.some((c, i) => {
+if (isJoker(c)) return false;
+const test = g.pHand.filter((_, j) => j !== i);
+const m = findBestMelds(test);
+return m.minFree <= 1 && m.resto <= 5;
+});
 }
 const pML = g?.pHand ? findBestMelds(g.pHand) : null;
 const bML = g?.bHand ? findBestMelds(g.bHand) : null;
