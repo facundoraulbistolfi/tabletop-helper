@@ -1332,6 +1332,16 @@ const [tourProgress, setTourProgress] = useState(0);
 const [tourCurrentPair, setTourCurrentPair] = useState(null);
 const stopTourRef = useRef(false);
 
+// Stabilization config — Sim
+const [useStabilized, setUseStabilized] = useState(false);
+const [stabilizeDecimals, setStabilizeDecimals] = useState(1);
+const [maxRounds, setMaxRounds] = useState(null);
+
+// Stabilization config — Tournament
+const [tourUseStabilized, setTourUseStabilized] = useState(true);
+const [tourStabilizeDecimals, setTourStabilizeDecimals] = useState(1);
+const [tourMaxRounds, setTourMaxRounds] = useState(null);
+
 // Match viewer
 const [mvB0, setMvB0] = useState(0);
 const [mvB1, setMvB1] = useState(1);
@@ -1400,10 +1410,12 @@ const wrSnaps: {games: number, rate: number}[] = [];
 const swSnaps: {pairs: number, rate0: number, rate1: number}[] = [];
 const n0 = BOT[simB0].name, n1 = BOT[simB1].name;
 const STABLE_WINDOW = 20;
-const STABLE_THRESHOLD = 0.3; // pp std dev
+const STABLE_THRESHOLD = Math.pow(10, -stabilizeDecimals) * (stabilizeDecimals === 0 ? 3 : 1);
 const MIN_GAMES = 200;
+const MAX_GAMES = useStabilized && maxRounds ? maxRounds : Infinity;
 const BATCH = 20;
 const isStable = () => {
+  if (!useStabilized) return false;
   if (wrSnaps.length < STABLE_WINDOW || done < MIN_GAMES) return false;
   const recent = wrSnaps.slice(-STABLE_WINDOW).map(s => s.rate);
   const mean = recent.reduce((a, b) => a + b, 0) / recent.length;
@@ -1412,7 +1424,9 @@ const isStable = () => {
 };
 const tick = () => {
 if (stopRef.current) { setSimRun(false); return; }
+if (done >= MAX_GAMES) { setSimRun(false); setProg(100); return; }
 for (let i = 0; i < BATCH; i++) {
+if (done >= MAX_GAMES) break;
 const [gA, gB] = simulateGamePair(simB0, simB1);
 const winnerA = gA.gameLoser === 0 ? 1 : 0;
 const winnerB = gB.gameLoser === 0 ? 1 : 0;
@@ -1434,14 +1448,15 @@ const totalG = gw0 + gw1;
 if (totalG > 0) wrSnaps.push({ games: totalG, rate: (gw0 / totalG) * 100 });
 const totalPairs = sw0 + sw1 + splits;
 if (totalPairs > 0) swSnaps.push({ pairs: totalPairs, rate0: (sw0 / totalPairs) * 100, rate1: (sw1 / totalPairs) * 100 });
-setProg(Math.min(99, Math.round((done / Math.max(done, MIN_GAMES)) * 50 + (isStable() ? 50 : 0))));
+const progress = useStabilized && maxRounds ? (done / maxRounds) * 100 : Math.min(99, Math.round((done / Math.max(done, MIN_GAMES)) * 50 + (isStable() ? 50 : 0)));
+setProg(Math.min(100, progress));
 setChartData(buildChartData(fd, dd, n0, n1));
 setRoundWins([rw0, rw1]); setGameWins([gw0, gw1]); setSweepWins([sw0, sw1, splits]); setTotalRounds(tr);
 setWinRateHistory([...wrSnaps]); setSweepRateHistory([...swSnaps]); setChinchonWins([cc0, cc1]);
-if (isStable()) { setSimRun(false); setProg(100); } else setTimeout(tick, 0);
+if (isStable() || done >= MAX_GAMES) { setSimRun(false); setProg(100); } else setTimeout(tick, 0);
 };
 setTimeout(tick, 0);
-}, [simB0, simB1]);
+}, [simB0, simB1, useStabilized, stabilizeDecimals, maxRounds]);
 
 const runTournament = useCallback(() => {
 if (new Set(tourBots).size < 4) return;
@@ -1458,11 +1473,16 @@ for (let i = 0; i < n; i++) for (let j = i + 1; j < n; j++) pairs.push([i, j]);
 const wins = Array.from({ length: n }, () => Array(n).fill(0));
 const gamesPlayed = Array.from({ length: n }, () => Array(n).fill(0));
 
-const STABLE_WINDOW = 20, STABLE_THRESHOLD = 0.3, MIN_BATCHES = 200, BATCH = 20;
+const STABLE_WINDOW = 20;
+const STABLE_THRESHOLD = Math.pow(10, -tourStabilizeDecimals) * (tourStabilizeDecimals === 0 ? 3 : 1);
+const MIN_BATCHES = 200;
+const MAX_BATCHES = tourUseStabilized && tourMaxRounds ? tourMaxRounds : Infinity;
+const BATCH = 20;
 let pairIdx = 0, batchesDone = 0, currentWins = 0, currentTotal = 0;
 const winSnapshots = [];
 
 const isStablePair = () => {
+  if (!tourUseStabilized) return false;
   if (winSnapshots.length < STABLE_WINDOW || batchesDone < MIN_BATCHES) return false;
   const recent = winSnapshots.slice(-STABLE_WINDOW);
   const mean = recent.reduce((a, b) => a + b, 0) / recent.length;
@@ -1474,6 +1494,11 @@ const tick = () => {
   if (stopTourRef.current) { setTourRunning(false); return; }
   const [ai, bi] = pairs[pairIdx];
   const globalA = tourBots[ai], globalB = tourBots[bi];
+  if (batchesDone >= MAX_BATCHES) {
+    pairIdx++;
+    batchesDone = 0; currentWins = 0; currentTotal = 0; winSnapshots.length = 0;
+    if (pairIdx >= pairs.length) { setTourRunning(false); setTourProgress(100); setTourCurrentPair(null); return; }
+  }
   for (let i = 0; i < BATCH; i++) {
     const [gA, gB] = simulateGamePair(globalA, globalB);
     const wA = (gA.gameLoser === 1 ? 1 : 0) + (gB.gameLoser === 1 ? 1 : 0);
@@ -1485,11 +1510,11 @@ const tick = () => {
   batchesDone++;
   winSnapshots.push(currentTotal > 0 ? (currentWins / currentTotal) * 100 : 50);
   const stable = isStablePair();
-  const fraction = stable ? 1 : Math.min(batchesDone / MIN_BATCHES, 0.99);
+  const fraction = stable || batchesDone >= MAX_BATCHES ? 1 : Math.min(batchesDone / MIN_BATCHES, 0.99);
   setTourProgress(Math.min(99, Math.round(((pairIdx + fraction) / pairs.length) * 100)));
   setTourCurrentPair(pairIdx);
   setTourResults({ wins: wins.map(r => [...r]), games: gamesPlayed.map(r => [...r]) });
-  if (stable) {
+  if (stable || batchesDone >= MAX_BATCHES) {
     pairIdx++;
     batchesDone = 0; currentWins = 0; currentTotal = 0; winSnapshots.length = 0;
     if (pairIdx >= pairs.length) { setTourRunning(false); setTourProgress(100); setTourCurrentPair(null); return; }
@@ -1498,7 +1523,7 @@ const tick = () => {
   setTimeout(tick, 0);
 };
 setTimeout(tick, 0);
-}, [tourBots]);
+}, [tourBots, tourUseStabilized, tourStabilizeDecimals, tourMaxRounds]);
 
 // -- Match viewer --
 const replay = replayPair ? (matchRound === "A" ? replayPair.replayA : replayPair.replayB) : null;
@@ -1635,10 +1660,36 @@ return (
             </button>
           ))}
         </div>
+
+        {/* Stabilization config */}
+        <div className="mt-2 w-full bg-gray-800 rounded-lg p-3 border border-gray-700">
+          <label className="flex items-center gap-2 cursor-pointer mb-2">
+            <input type="checkbox" checked={useStabilized} onChange={(e) => setUseStabilized(e.target.checked)} disabled={simRun}
+              className="w-4 h-4 rounded cursor-pointer" />
+            <span className="text-xs text-gray-400">Modo estabilizado</span>
+          </label>
+          {useStabilized && (
+            <div className="flex gap-3 flex-wrap text-xs">
+              <div>
+                <label className="text-gray-500 block mb-1">Decimales de precisión</label>
+                <select value={stabilizeDecimals} onChange={(e) => setStabilizeDecimals(Number(e.target.value))} disabled={simRun}
+                  className="bg-gray-900 border border-gray-600 rounded px-2 py-1 text-gray-200 text-xs">
+                  {[0, 1, 2, 3].map(d => <option key={d} value={d}>{d}</option>)}
+                </select>
+              </div>
+              <div>
+                <label className="text-gray-500 block mb-1">Máx rondas (opcional)</label>
+                <input type="number" value={maxRounds || ""} onChange={(e) => setMaxRounds(e.target.value ? Number(e.target.value) : null)} disabled={simRun}
+                  placeholder="Sin límite" min="1" className="bg-gray-900 border border-gray-600 rounded px-2 py-1 text-gray-200 text-xs w-24" />
+              </div>
+            </div>
+          )}
+        </div>
+
         {!simRun ? (
           <div className="flex gap-2 mt-1 flex-wrap justify-center">
             <button onClick={runSim} className="bg-emerald-600 hover:bg-emerald-500 text-white px-5 py-1.5 rounded-md text-sm font-semibold active:scale-95">Simular {numGames >= 1000 ? `${numGames / 1000}k` : numGames} partidas</button>
-            <button onClick={runSimUntilStable} className="bg-violet-700 hover:bg-violet-600 text-white px-4 py-1.5 rounded-md text-sm font-semibold active:scale-95" title="Corre hasta que el winrate se estabilice (desvío estándar < 0.3pp en las últimas 20 muestras)">⚖️ Auto-estabilizar</button>
+            <button onClick={runSimUntilStable} className="bg-violet-700 hover:bg-violet-600 text-white px-4 py-1.5 rounded-md text-sm font-semibold active:scale-95" title="Corre hasta que el winrate se estabilice">⚖️ Auto-estabilizar</button>
           </div>
         ) : <button onClick={() => { stopRef.current = true; }} className="bg-red-600 hover:bg-red-500 text-white px-5 py-1.5 rounded-md text-sm font-semibold mt-1">Parar ({prog}%)</button>}
       </div>
@@ -1940,7 +1991,7 @@ return (
     }).sort((a, b) => b.winPct - a.winPct);
 
     const isDone = !tourRunning && tourProgress === 100 && tourResults !== null;
-    const medals = ["🥇", "🥈", "🥉", "4️⃣"];
+    const medals = ["🥇", "🥈", "🥉", "🗑️"];
 
     return (
       <div className="flex flex-col items-center w-full max-w-2xl">
@@ -1984,11 +2035,36 @@ return (
           })}
         </div>
 
+        {/* Stabilization config */}
+        <div className="w-full bg-gray-800 rounded-lg p-3 border border-gray-700 mb-4">
+          <label className="flex items-center gap-2 cursor-pointer mb-2">
+            <input type="checkbox" checked={tourUseStabilized} onChange={(e) => setTourUseStabilized(e.target.checked)} disabled={tourRunning}
+              className="w-4 h-4 rounded cursor-pointer" />
+            <span className="text-xs text-gray-400">Modo estabilizado</span>
+          </label>
+          {tourUseStabilized && (
+            <div className="flex gap-3 flex-wrap text-xs">
+              <div>
+                <label className="text-gray-500 block mb-1">Decimales de precisión</label>
+                <select value={tourStabilizeDecimals} onChange={(e) => setTourStabilizeDecimals(Number(e.target.value))} disabled={tourRunning}
+                  className="bg-gray-900 border border-gray-600 rounded px-2 py-1 text-gray-200 text-xs">
+                  {[0, 1, 2, 3].map(d => <option key={d} value={d}>{d}</option>)}
+                </select>
+              </div>
+              <div>
+                <label className="text-gray-500 block mb-1">Máx rondas (opcional)</label>
+                <input type="number" value={tourMaxRounds || ""} onChange={(e) => setTourMaxRounds(e.target.value ? Number(e.target.value) : null)} disabled={tourRunning}
+                  placeholder="Sin límite" min="1" className="bg-gray-900 border border-gray-600 rounded px-2 py-1 text-gray-200 text-xs w-24" />
+              </div>
+            </div>
+          )}
+        </div>
+
         {/* Start/Stop */}
         {!tourRunning ? (
           <button onClick={runTournament}
             className="bg-amber-600 hover:bg-amber-500 text-white px-6 py-2 rounded-lg text-sm font-bold mb-3 active:scale-95 transition-all">
-            🏆 Iniciar torneo auto-estabilizado
+            🏆 Iniciar torneo {tourUseStabilized ? 'estabilizado' : ''}
           </button>
         ) : (
           <button onClick={() => { stopTourRef.current = true; }}
