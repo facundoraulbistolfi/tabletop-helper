@@ -1330,17 +1330,16 @@ const [tourResults, setTourResults] = useState(null);
 const [tourRunning, setTourRunning] = useState(false);
 const [tourProgress, setTourProgress] = useState(0);
 const [tourCurrentPair, setTourCurrentPair] = useState(null);
+const [tourCurrentStats, setTourCurrentStats] = useState(null);
 const stopTourRef = useRef(false);
 
 // Stabilization config — Sim
 const [useStabilized, setUseStabilized] = useState(false);
 const [stabilizeDecimals, setStabilizeDecimals] = useState(1);
-const [maxRounds, setMaxRounds] = useState(null);
 
 // Stabilization config — Tournament
 const [tourUseStabilized, setTourUseStabilized] = useState(true);
 const [tourStabilizeDecimals, setTourStabilizeDecimals] = useState(1);
-const [tourMaxRounds, setTourMaxRounds] = useState(null);
 
 // Match viewer
 const [mvB0, setMvB0] = useState(0);
@@ -1412,7 +1411,7 @@ const n0 = BOT[simB0].name, n1 = BOT[simB1].name;
 const STABLE_WINDOW = 20;
 const STABLE_THRESHOLD = Math.pow(10, -stabilizeDecimals) * (stabilizeDecimals === 0 ? 3 : 1);
 const MIN_GAMES = 200;
-const MAX_GAMES = useStabilized && maxRounds ? maxRounds : Infinity;
+const MAX_GAMES = numGames;
 const BATCH = 20;
 const isStable = () => {
   if (!useStabilized) return false;
@@ -1448,7 +1447,7 @@ const totalG = gw0 + gw1;
 if (totalG > 0) wrSnaps.push({ games: totalG, rate: (gw0 / totalG) * 100 });
 const totalPairs = sw0 + sw1 + splits;
 if (totalPairs > 0) swSnaps.push({ pairs: totalPairs, rate0: (sw0 / totalPairs) * 100, rate1: (sw1 / totalPairs) * 100 });
-const progress = useStabilized && maxRounds ? (done / maxRounds) * 100 : Math.min(99, Math.round((done / Math.max(done, MIN_GAMES)) * 50 + (isStable() ? 50 : 0)));
+const progress = Math.round((done / MAX_GAMES) * 100);
 setProg(Math.min(100, progress));
 setChartData(buildChartData(fd, dd, n0, n1));
 setRoundWins([rw0, rw1]); setGameWins([gw0, gw1]); setSweepWins([sw0, sw1, splits]); setTotalRounds(tr);
@@ -1456,7 +1455,7 @@ setWinRateHistory([...wrSnaps]); setSweepRateHistory([...swSnaps]); setChinchonW
 if (isStable() || done >= MAX_GAMES) { setSimRun(false); setProg(100); } else setTimeout(tick, 0);
 };
 setTimeout(tick, 0);
-}, [simB0, simB1, useStabilized, stabilizeDecimals, maxRounds]);
+}, [simB0, simB1, useStabilized, stabilizeDecimals, numGames]);
 
 const runTournament = useCallback(() => {
 if (new Set(tourBots).size < 4) return;
@@ -1464,6 +1463,7 @@ stopTourRef.current = false;
 setTourRunning(true);
 setTourProgress(0);
 setTourCurrentPair(0);
+setTourCurrentStats(null);
 setTourResults(null);
 
 const n = 4;
@@ -1472,13 +1472,17 @@ for (let i = 0; i < n; i++) for (let j = i + 1; j < n; j++) pairs.push([i, j]);
 
 const wins = Array.from({ length: n }, () => Array(n).fill(0));
 const gamesPlayed = Array.from({ length: n }, () => Array(n).fill(0));
+const mirrorWins = Array.from({ length: n }, () => Array(n).fill(0));
+const mirrorPairs = Array.from({ length: n }, () => Array(n).fill(0));
+const chinchones = Array.from({ length: n }, () => Array(n).fill(0));
+const chinchonGames = Array.from({ length: n }, () => Array(n).fill(0));
 
 const STABLE_WINDOW = 20;
 const STABLE_THRESHOLD = Math.pow(10, -tourStabilizeDecimals) * (tourStabilizeDecimals === 0 ? 3 : 1);
 const MIN_BATCHES = 200;
-const MAX_BATCHES = tourUseStabilized && tourMaxRounds ? tourMaxRounds : Infinity;
+const MAX_BATCHES = numGames;
 const BATCH = 20;
-let pairIdx = 0, batchesDone = 0, currentWins = 0, currentTotal = 0;
+let pairIdx = 0, batchesDone = 0, currentWins = 0, currentTotal = 0, currentMirror = [0, 0], currentChinchones = [0, 0];
 const winSnapshots = [];
 
 const isStablePair = () => {
@@ -1496,14 +1500,31 @@ const tick = () => {
   const globalA = tourBots[ai], globalB = tourBots[bi];
   if (batchesDone >= MAX_BATCHES) {
     pairIdx++;
-    batchesDone = 0; currentWins = 0; currentTotal = 0; winSnapshots.length = 0;
-    if (pairIdx >= pairs.length) { setTourRunning(false); setTourProgress(100); setTourCurrentPair(null); return; }
+    batchesDone = 0; currentWins = 0; currentTotal = 0; currentMirror = [0, 0]; currentChinchones = [0, 0]; winSnapshots.length = 0;
+    if (pairIdx >= pairs.length) { setTourRunning(false); setTourProgress(100); setTourCurrentPair(null); setTourCurrentStats(null); return; }
   }
   for (let i = 0; i < BATCH; i++) {
     const [gA, gB] = simulateGamePair(globalA, globalB);
     const wA = (gA.gameLoser === 1 ? 1 : 0) + (gB.gameLoser === 1 ? 1 : 0);
     wins[ai][bi] += wA;
     gamesPlayed[ai][bi] += 2;
+    const winnerA = gA.gameLoser === 0 ? 1 : 0;
+    const winnerB = gB.gameLoser === 0 ? 1 : 0;
+    if (winnerA === 0 && winnerB === 0) { mirrorWins[ai][bi] += 1; currentMirror[0] += 1; }
+    else if (winnerA === 1 && winnerB === 1) { mirrorWins[bi][ai] += 1; currentMirror[1] += 1; }
+    mirrorPairs[ai][bi] += 1;
+    const chinA0 = gA.roundStats.filter(rs => rs.chinchon && rs.winner === 0).length;
+    const chinA1 = gA.roundStats.filter(rs => rs.chinchon && rs.winner === 1).length;
+    const chinB0 = gB.roundStats.filter(rs => rs.chinchon && rs.winner === 0).length;
+    const chinB1 = gB.roundStats.filter(rs => rs.chinchon && rs.winner === 1).length;
+    const chinForA = chinA0 + chinB0;
+    const chinForB = chinA1 + chinB1;
+    chinchones[ai][bi] += chinForA;
+    chinchones[bi][ai] += chinForB;
+    chinchonGames[ai][bi] += 2;
+    chinchonGames[bi][ai] += 2;
+    currentChinchones[0] += chinForA;
+    currentChinchones[1] += chinForB;
     currentWins += wA;
     currentTotal += 2;
   }
@@ -1513,17 +1534,30 @@ const tick = () => {
   const fraction = stable || batchesDone >= MAX_BATCHES ? 1 : Math.min(batchesDone / MIN_BATCHES, 0.99);
   setTourProgress(Math.min(99, Math.round(((pairIdx + fraction) / pairs.length) * 100)));
   setTourCurrentPair(pairIdx);
-  setTourResults({ wins: wins.map(r => [...r]), games: gamesPlayed.map(r => [...r]) });
+  setTourCurrentStats({
+    games: currentTotal,
+    wins: [currentWins, currentTotal - currentWins],
+    mirrorWins: [...currentMirror],
+    chinchones: [...currentChinchones],
+  });
+  setTourResults({
+    wins: wins.map(r => [...r]),
+    games: gamesPlayed.map(r => [...r]),
+    mirrorWins: mirrorWins.map(r => [...r]),
+    mirrorPairs: mirrorPairs.map(r => [...r]),
+    chinchones: chinchones.map(r => [...r]),
+    chinchonGames: chinchonGames.map(r => [...r]),
+  });
   if (stable || batchesDone >= MAX_BATCHES) {
     pairIdx++;
-    batchesDone = 0; currentWins = 0; currentTotal = 0; winSnapshots.length = 0;
-    if (pairIdx >= pairs.length) { setTourRunning(false); setTourProgress(100); setTourCurrentPair(null); return; }
+    batchesDone = 0; currentWins = 0; currentTotal = 0; currentMirror = [0, 0]; currentChinchones = [0, 0]; winSnapshots.length = 0;
+    if (pairIdx >= pairs.length) { setTourRunning(false); setTourProgress(100); setTourCurrentPair(null); setTourCurrentStats(null); return; }
     setTourCurrentPair(pairIdx);
   }
   setTimeout(tick, 0);
 };
 setTimeout(tick, 0);
-}, [tourBots, tourUseStabilized, tourStabilizeDecimals, tourMaxRounds]);
+}, [tourBots, tourUseStabilized, tourStabilizeDecimals, numGames]);
 
 // -- Match viewer --
 const replay = replayPair ? (matchRound === "A" ? replayPair.replayA : replayPair.replayB) : null;
@@ -1676,11 +1710,6 @@ return (
                   className="bg-gray-900 border border-gray-600 rounded px-2 py-1 text-gray-200 text-xs">
                   {[0, 1, 2, 3].map(d => <option key={d} value={d}>{d}</option>)}
                 </select>
-              </div>
-              <div>
-                <label className="text-gray-500 block mb-1">Máx rondas (opcional)</label>
-                <input type="number" value={maxRounds || ""} onChange={(e) => setMaxRounds(e.target.value ? Number(e.target.value) : null)} disabled={simRun}
-                  placeholder="Sin límite" min="1" className="bg-gray-900 border border-gray-600 rounded px-2 py-1 text-gray-200 text-xs w-24" />
               </div>
             </div>
           )}
@@ -1984,11 +2013,40 @@ return (
       }
       return { wins: totalW, games: totalG };
     };
+    const getBotMirrorWins = (ai) => {
+      if (!tourResults) return { wins: 0, pairs: 0 };
+      let totalW = 0, totalP = 0;
+      for (let j = 0; j < TOUR_N; j++) {
+        if (j === ai) continue;
+        totalW += tourResults.mirrorWins[ai][j];
+        if (j > ai) totalP += tourResults.mirrorPairs[ai][j];
+        else totalP += tourResults.mirrorPairs[j][ai];
+      }
+      return { wins: totalW, pairs: totalP };
+    };
+    const getBotChinchones = (ai) => {
+      if (!tourResults) return { chinchones: 0, games: 0 };
+      let totalC = 0, totalG = 0;
+      for (let j = 0; j < TOUR_N; j++) {
+        if (j === ai) continue;
+        totalC += tourResults.chinchones[ai][j];
+        totalG += tourResults.chinchonGames[ai][j];
+      }
+      return { chinchones: totalC, games: totalG };
+    };
 
-    const ranking = [0, 1, 2, 3].map(ai => {
+    const rankingWins = [0, 1, 2, 3].map(ai => {
       const { wins: w, games: g } = getBotWins(ai);
       return { idx: ai, winPct: g > 0 ? (w / g) * 100 : 0, games: g };
     }).sort((a, b) => b.winPct - a.winPct);
+    const rankingMirror = [0, 1, 2, 3].map(ai => {
+      const { wins: w, pairs: p } = getBotMirrorWins(ai);
+      return { idx: ai, wins: w, pairs: p, winPct: p > 0 ? (w / p) * 100 : 0 };
+    }).sort((a, b) => b.winPct - a.winPct);
+    const rankingChinchon = [0, 1, 2, 3].map(ai => {
+      const { chinchones: c, games: g } = getBotChinchones(ai);
+      return { idx: ai, chinchones: c, games: g, rate: g > 0 ? (c / g) * 100 : 0 };
+    }).sort((a, b) => b.chinchones - a.chinchones || b.rate - a.rate);
 
     const isDone = !tourRunning && tourProgress === 100 && tourResults !== null;
     const medals = ["🥇", "🥈", "🥉", "🗑️"];
@@ -2051,11 +2109,6 @@ return (
                   {[0, 1, 2, 3].map(d => <option key={d} value={d}>{d}</option>)}
                 </select>
               </div>
-              <div>
-                <label className="text-gray-500 block mb-1">Máx rondas (opcional)</label>
-                <input type="number" value={tourMaxRounds || ""} onChange={(e) => setTourMaxRounds(e.target.value ? Number(e.target.value) : null)} disabled={tourRunning}
-                  placeholder="Sin límite" min="1" className="bg-gray-900 border border-gray-600 rounded px-2 py-1 text-gray-200 text-xs w-24" />
-              </div>
             </div>
           )}
         </div>
@@ -2092,6 +2145,41 @@ return (
             <span style={{ color: BOT[tourBots[tourPairs[tourCurrentPair][1]]].color }}>
               {BOT[tourBots[tourPairs[tourCurrentPair][1]]].emoji} {BOT[tourBots[tourPairs[tourCurrentPair][1]]].name}
             </span>
+          </div>
+        )}
+        {tourRunning && tourCurrentStats && tourCurrentPair !== null && (
+          <div className="w-full bg-gray-900 border border-gray-800 rounded-lg p-3 mb-4">
+            <h3 className="text-xs text-gray-500 uppercase tracking-wider mb-2 text-center">Enfrentamiento actual</h3>
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-center text-xs">
+              <div className="bg-gray-800/70 rounded p-2">
+                <div className="text-gray-500">Partidas</div>
+                <div className="text-gray-200 font-mono">{tourCurrentStats.games}</div>
+              </div>
+              <div className="bg-gray-800/70 rounded p-2">
+                <div className="text-gray-500">Victorias</div>
+                <div className="font-mono">
+                  <span style={{ color: BOT[tourBots[tourPairs[tourCurrentPair][0]]].color }}>{tourCurrentStats.wins[0]}</span>
+                  <span className="text-gray-500"> - </span>
+                  <span style={{ color: BOT[tourBots[tourPairs[tourCurrentPair][1]]].color }}>{tourCurrentStats.wins[1]}</span>
+                </div>
+              </div>
+              <div className="bg-gray-800/70 rounded p-2">
+                <div className="text-gray-500">Victorias espejo</div>
+                <div className="font-mono">
+                  <span style={{ color: BOT[tourBots[tourPairs[tourCurrentPair][0]]].color }}>{tourCurrentStats.mirrorWins[0]}</span>
+                  <span className="text-gray-500"> - </span>
+                  <span style={{ color: BOT[tourBots[tourPairs[tourCurrentPair][1]]].color }}>{tourCurrentStats.mirrorWins[1]}</span>
+                </div>
+              </div>
+              <div className="bg-gray-800/70 rounded p-2">
+                <div className="text-gray-500">Chinchones</div>
+                <div className="font-mono">
+                  <span style={{ color: BOT[tourBots[tourPairs[tourCurrentPair][0]]].color }}>{tourCurrentStats.chinchones[0]}</span>
+                  <span className="text-gray-500"> - </span>
+                  <span style={{ color: BOT[tourBots[tourPairs[tourCurrentPair][1]]].color }}>{tourCurrentStats.chinchones[1]}</span>
+                </div>
+              </div>
+            </div>
           </div>
         )}
 
@@ -2140,25 +2228,64 @@ return (
                 </tbody>
               </table>
             </div>
+            <div className="w-full bg-gray-900 border border-gray-800 rounded-xl p-4 mb-4 overflow-x-auto">
+              <h3 className="text-xs text-gray-500 uppercase tracking-wider mb-3 text-center">Matriz espejo (% de pares donde la fila gana ambas)</h3>
+              <table className="w-full text-xs min-w-[320px]">
+                <thead>
+                  <tr>
+                    <th className="text-gray-600 text-left py-1 pr-3 font-normal w-24">Bot</th>
+                    {[0, 1, 2, 3].map(j => {
+                      const b = BOT[tourBots[j]];
+                      return <th key={j} className="text-center px-2 py-1 font-medium" style={{ color: b.color }}>{b.emoji} {b.name}</th>;
+                    })}
+                    <th className="text-center px-2 py-1 text-gray-400 font-medium">Total</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {[0, 1, 2, 3].map(ai => {
+                    const b = BOT[tourBots[ai]];
+                    const { wins: totalW, pairs: totalP } = getBotMirrorWins(ai);
+                    const winPct = totalP > 0 ? (totalW / totalP) * 100 : null;
+                    return (
+                      <tr key={ai} className="border-t border-gray-800">
+                        <td className="py-2 pr-3 font-medium" style={{ color: b.color }}>{b.emoji} {b.name}</td>
+                        {[0, 1, 2, 3].map(j => {
+                          if (j === ai) return <td key={j} className="text-center text-gray-700 py-2">—</td>;
+                          const p = j > ai ? tourResults.mirrorPairs[ai][j] : tourResults.mirrorPairs[j][ai];
+                          const w = tourResults.mirrorWins[ai][j];
+                          if (p === 0) return <td key={j} className="text-center text-gray-600 py-2">...</td>;
+                          const pct = (w / p) * 100;
+                          return <td key={j} className="text-center py-2 font-mono text-violet-300">{pct.toFixed(1)}%</td>;
+                        })}
+                        <td className="text-center py-2 font-bold font-mono">
+                          {winPct !== null ? <span style={{ color: b.color }}>{winPct.toFixed(2)}%</span> : <span className="text-gray-600">...</span>}
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
 
             {/* Ranking / Podium */}
             <div className="w-full bg-gray-900 border border-gray-800 rounded-xl p-4">
               {isDone && (
                 <div className="text-center mb-5">
-                  <div className="text-5xl mb-2">{BOT[tourBots[ranking[0].idx]].emoji}</div>
-                  <div className="text-xl font-extrabold" style={{ color: BOT[tourBots[ranking[0].idx]].color }}>
-                    {BOT[tourBots[ranking[0].idx]].name}
+                  <div className="text-5xl mb-2">{BOT[tourBots[rankingWins[0].idx]].emoji}</div>
+                  <div className="text-xl font-extrabold" style={{ color: BOT[tourBots[rankingWins[0].idx]].color }}>
+                    {BOT[tourBots[rankingWins[0].idx]].name}
                   </div>
                   <div className="text-xs text-gray-500 mt-1">
-                    🏆 Mejor bot · {ranking[0].winPct.toFixed(2)}% de victorias globales
+                    🏆 Mejor bot · {rankingWins[0].winPct.toFixed(2)}% de victorias globales
                   </div>
                 </div>
               )}
               <h3 className="text-xs text-gray-500 uppercase tracking-wider mb-3 text-center">
                 {isDone ? "Clasificación final" : "Clasificación parcial"}
               </h3>
-              <div className="flex flex-col gap-2.5">
-                {ranking.map((r, pos) => {
+              <h4 className="text-[11px] text-gray-500 uppercase tracking-wider mb-2">1) Victorias totales</h4>
+              <div className="flex flex-col gap-2.5 mb-4">
+                {rankingWins.map((r, pos) => {
                   const bot = BOT[tourBots[r.idx]];
                   const barW = r.games > 0 ? Math.max(2, Math.min(100, r.winPct * 2 - 50)) : 2;
                   return (
@@ -2171,6 +2298,44 @@ return (
                       </div>
                       <span className="text-xs font-mono w-16 text-right shrink-0" style={{ color: bot.color }}>
                         {r.games > 0 ? `${r.winPct.toFixed(2)}%` : "..."}
+                      </span>
+                    </div>
+                  );
+                })}
+              </div>
+              <h4 className="text-[11px] text-gray-500 uppercase tracking-wider mb-2">2) Victorias espejo</h4>
+              <div className="flex flex-col gap-2.5 mb-4">
+                {rankingMirror.map((r, pos) => {
+                  const bot = BOT[tourBots[r.idx]];
+                  const barW = r.pairs > 0 ? Math.max(2, Math.min(100, r.winPct)) : 2;
+                  return (
+                    <div key={r.idx} className="flex items-center gap-2">
+                      <span className="text-base w-7 text-center shrink-0">{medals[pos]}</span>
+                      <span className="w-28 text-xs font-semibold shrink-0" style={{ color: bot.color }}>{bot.emoji} {bot.name}</span>
+                      <div className="flex-1 h-5 bg-gray-800 rounded overflow-hidden">
+                        <div className="h-full rounded transition-all duration-300" style={{ width: `${barW}%`, background: bot.color + "99" }} />
+                      </div>
+                      <span className="text-xs font-mono w-24 text-right shrink-0" style={{ color: bot.color }}>
+                        {r.pairs > 0 ? `${r.wins} (${r.winPct.toFixed(2)}%)` : "..."}
+                      </span>
+                    </div>
+                  );
+                })}
+              </div>
+              <h4 className="text-[11px] text-gray-500 uppercase tracking-wider mb-2">3) Chinchones</h4>
+              <div className="flex flex-col gap-2.5">
+                {rankingChinchon.map((r, pos) => {
+                  const bot = BOT[tourBots[r.idx]];
+                  const barW = r.games > 0 ? Math.max(2, Math.min(100, r.rate * 2)) : 2;
+                  return (
+                    <div key={r.idx} className="flex items-center gap-2">
+                      <span className="text-base w-7 text-center shrink-0">{medals[pos]}</span>
+                      <span className="w-28 text-xs font-semibold shrink-0" style={{ color: bot.color }}>{bot.emoji} {bot.name}</span>
+                      <div className="flex-1 h-5 bg-gray-800 rounded overflow-hidden">
+                        <div className="h-full rounded transition-all duration-300" style={{ width: `${barW}%`, background: bot.color + "99" }} />
+                      </div>
+                      <span className="text-xs font-mono w-28 text-right shrink-0" style={{ color: bot.color }}>
+                        {r.games > 0 ? `${r.chinchones} (${r.rate.toFixed(2)}%)` : "..."}
                       </span>
                     </div>
                   );
