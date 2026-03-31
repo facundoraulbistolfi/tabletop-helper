@@ -133,6 +133,22 @@ if (gaps <= jokers) return true;
 return false;
 }
 
+/* -- nearChinchon with configurable threshold (for custom bots) -- */
+function nearChinchonCustom(hand, threshold) {
+const jokers = hand.filter(isJoker).length;
+const bySuit = {};
+hand.forEach(c => { if (!isJoker(c)) (bySuit[c.suit] ??= []).push(RANK_ORDER[c.rank]); });
+for (const orders of Object.values(bySuit)) {
+orders.sort((a, b) => a - b);
+for (let start = 0; start <= 5; start++) {
+let present = 0;
+for (let p = start; p <= start + 6; p++) { if (orders.includes(p)) present++; }
+if (present + jokers >= threshold) return true;
+}
+}
+return false;
+}
+
 /* -- Check if hand has 4+ consecutive same suit (for MartinMatic) -- */
 function has4RunSameSuit(hand) {
 const bySuit = {};
@@ -202,21 +218,29 @@ return false;
 /* ==============================================================
 CUSTOM BOT SYSTEM
 ============================================================== */
-const CUSTOM_EMOJIS = ["🧪", "⚡", "🎲", "💎", "🦾", "🧠", "🔥", "🤡"];
+// Built-in bot emojis (🤖🎀🔮🔴⚙️😈) are reserved and excluded from custom selection
+const CUSTOM_EMOJIS = [
+"🧪", "⚡", "🎲", "💎", "🦾", "🧠", "🔥", "🤡",
+"🎯", "🎭", "🚀", "💀", "👻", "🕷️", "🍀", "🌟",
+"👑", "🐉", "🦊", "🦁", "🌊", "🏆", "🌋", "🛡️",
+"🎪", "🎸", "🦈", "🦋", "🌈", "🎩", "🔱", "🌀",
+];
 const CUSTOM_COLORS = [
 { color: "#f59e0b", text: "text-amber-400", bg: "bg-amber-950", border: "border-amber-800" },
 { color: "#06b6d4", text: "text-cyan-400", bg: "bg-cyan-950", border: "border-cyan-800" },
 { color: "#f97316", text: "text-orange-400", bg: "bg-orange-950", border: "border-orange-800" },
 { color: "#14b8a6", text: "text-teal-400", bg: "bg-teal-950", border: "border-teal-800" },
 ];
+const DEFAULT_SCORE_RULES = () => [{ minScore: 0, maxResto: 5 }, { minScore: 25, maxResto: 3 }, { minScore: 50, maxResto: 2 }, { minScore: 75, maxResto: 1 }];
 const DEFAULT_CUSTOM_CONFIG = () => ({
 id: "custom-" + Date.now(),
 name: "Mi Bot",
 emoji: "🧪",
 colorIdx: 0,
+description: "",
 draw: { mode: "smart", restoThreshold: 3 },
 discard: { mode: "default" },
-cut: { maxFree: 1, baseResto: 5, useScoreRules: false, scoreRules: [{ minScore: 0, maxResto: 5 }, { minScore: 25, maxResto: 3 }, { minScore: 50, maxResto: 2 }, { minScore: 75, maxResto: 1 }], pursueChinchon: false },
+cut: { maxFree: 1, baseResto: 5, useScoreRules: false, scoreRules: DEFAULT_SCORE_RULES(), pursueChinchon: false, chinchonThreshold: 6, chinchonRunMode: false },
 });
 
 function shouldDrawDiscard(hand, top, botObj) {
@@ -234,73 +258,110 @@ return a8.resto < b7.resto - (dc.restoThreshold ?? 3);
 
 function buildCanCut(cut) {
 return (m7, score, hand) => {
-if (cut.pursueChinchon && nearChinchon(hand)) return m7.minFree === 0;
+if (cut.pursueChinchon && nearChinchonCustom(hand, cut.chinchonThreshold ?? 6)) return m7.minFree === 0;
+if (cut.chinchonRunMode && has4RunSameSuit(hand)) return m7.minFree === 0;
 const maxR = cut.useScoreRules
 ? ([...cut.scoreRules].reverse().find(r => (score ?? 0) >= r.minScore)?.maxResto ?? cut.baseResto)
 : cut.baseResto;
-return m7.minFree <= cut.maxFree && m7.resto <= maxR;
+return m7.minFree <= cut.maxFree && m7.resto <= Math.min(maxR, 5);
 };
 }
 
 function generateDesc(cfg) {
 const parts = [];
-const dm = { always_deck: "Mazo", smart: "Inteligente", aggressive: "Agresivo" };
-parts.push("Robo: " + (dm[cfg.draw.mode] || "Inteligente"));
-const dd = { default: "Mayor valor", high_rank: "Mayor rango", optimal: "Óptimo" };
-parts.push("Desc: " + (dd[cfg.discard.mode] || "Mayor valor"));
-if (cfg.cut.useScoreRules) parts.push("Corte por puntaje");
+const dm = { always_deck: "Solo mazo", smart: "Robo inteligente", aggressive: "Robo agresivo" };
+parts.push(dm[cfg.draw.mode] || "Robo inteligente");
+const dd = { default: "Desc. por valor", high_rank: "Desc. por rango", optimal: "Desc. óptimo" };
+parts.push(dd[cfg.discard.mode] || "Desc. por valor");
+if (cfg.cut.useScoreRules) parts.push("Corte adaptativo");
 else parts.push("Corte ≤" + cfg.cut.baseResto);
-if (cfg.cut.pursueChinchon) parts.push("🎯chinchón");
+if (cfg.cut.chinchonRunMode) parts.push("🏃corrida");
+if (cfg.cut.pursueChinchon) parts.push("🎯chinchón(" + (cfg.cut.chinchonThreshold ?? 6) + ")");
 return parts.join(" · ");
 }
 
-function buildCustomBot(cfg) {
-const c = CUSTOM_COLORS[cfg.colorIdx % CUSTOM_COLORS.length];
+function buildBotFromConfig(cfg) {
+const color = cfg.color ?? CUSTOM_COLORS[cfg.colorIdx % CUSTOM_COLORS.length].color;
+const text = cfg.text ?? CUSTOM_COLORS[cfg.colorIdx % CUSTOM_COLORS.length].text;
+const bg = cfg.bg ?? CUSTOM_COLORS[cfg.colorIdx % CUSTOM_COLORS.length].bg;
+const border = cfg.border ?? CUSTOM_COLORS[cfg.colorIdx % CUSTOM_COLORS.length].border;
 return {
 id: cfg.id, name: cfg.name, emoji: cfg.emoji,
-color: c.color, text: c.text, bg: c.bg, border: c.border,
-desc: generateDesc(cfg), custom: true, drawConfig: cfg.draw,
+color, text, bg, border,
+desc: generateDesc(cfg), description: cfg.description ?? "",
+custom: !cfg.color, // color field present = builtin
+drawConfig: cfg.draw,
 canCut: buildCanCut(cfg.cut),
 pickDiscard: cfg.discard.mode === "high_rank" ? taiDiscard : cfg.discard.mode === "optimal" ? angryDiscard : defaultDiscard,
 };
 }
 
+function buildCustomBot(cfg) { return buildBotFromConfig(cfg); }
+
 function loadCustomConfigs() {
-try { return JSON.parse(localStorage.getItem("chinchon-arena-custom-bots") || "[]"); } catch { return []; }
+try {
+const configs = JSON.parse(localStorage.getItem("chinchon-arena-custom-bots") || "[]");
+// Clamp resto values to the legal game maximum of 5
+return configs.map(cfg => ({
+...cfg,
+cut: {
+...cfg.cut,
+baseResto: Math.min(cfg.cut?.baseResto ?? 5, 5),
+scoreRules: (cfg.cut?.scoreRules ?? []).map(r => ({ ...r, maxResto: Math.min(r.maxResto ?? 5, 5) })),
+},
+}));
+} catch { return []; }
 }
 function saveCustomConfigs(configs) {
 localStorage.setItem("chinchon-arena-custom-bots", JSON.stringify(configs));
 }
 
-const BUILTIN_BOTS = [
-{ id: "facutron", name: "FacuTron", emoji: "🤖", color: "#34d399", text: "text-emerald-400", bg: "bg-emerald-950", border: "border-emerald-800",
-desc: "Agresivo - corta con resto ≤ 5",
-canCut: (m7) => m7.minFree <= 1 && m7.resto <= 5, pickDiscard: defaultDiscard },
-{ id: "daibot", name: "DaiBot", emoji: "🎀", color: "#f472b6", text: "text-pink-400", bg: "bg-pink-950", border: "border-pink-800",
-desc: "Solo corta sin resto (-10 o chinchón)",
-canCut: (m7) => m7.minFree === 0, pickDiscard: defaultDiscard },
-{ id: "candelaria", name: "Candelar-IA", emoji: "🔮", color: "#38bdf8", text: "text-sky-400", bg: "bg-sky-950", border: "border-sky-800",
-desc: "< 50pts → sin resto · ≥ 50pts → corta con resto ≤ 3",
-canCut: (m7, score) => score < 50 ? m7.minFree === 0 : (m7.minFree <= 1 && m7.resto <= 3), pickDiscard: defaultDiscard },
-{ id: "tai", name: "T.A.I", emoji: "🔴", color: "#f87171", text: "text-red-400", bg: "bg-red-950", border: "border-red-800",
-desc: "Descarta altas primero · Corta con resto ≤ 3",
-canCut: (m7) => m7.minFree <= 1 && m7.resto <= 3, pickDiscard: taiDiscard },
-{ id: "martinmatic", name: "MartinMatic", emoji: "⚙️", color: "#9ca3af", text: "text-gray-400", bg: "bg-gray-900", border: "border-gray-700",
-desc: "Agresivo, pero con 4+ del mismo palo consecutivas va por chinchón",
-canCut: (m7, _s, hand) => has4RunSameSuit(hand) ? m7.minFree === 0 : (m7.minFree <= 1 && m7.resto <= 5), pickDiscard: defaultDiscard },
-{ id: "angrydai", name: "Angry DaiBot", emoji: "😈", color: "#a78bfa", text: "text-violet-400", bg: "bg-violet-950", border: "border-violet-800",
-desc: "Descarte óptimo · Corte dinámico · Va por chinchón si está cerca",
-canCut: (m7, score, hand) => {
-// If near chinchón, hold out for it
-if (nearChinchon(hand)) return m7.minFree === 0;
-// Score-aware dynamic thresholds
-if (score >= 75) return m7.minFree <= 1 && m7.resto <= 1; // desperate: only cut almost clean
-if (score >= 50) return m7.minFree <= 1 && m7.resto <= 3; // cautious
-if (score >= 25) return m7.minFree <= 1 && m7.resto <= 2; // patient
-return m7.minFree <= 1 && m7.resto <= 2; // early game: patient, wait for good cuts
+const BUILTIN_BOT_CONFIGS = [
+{ id: "facutron", name: "FacuTron", emoji: "🤖",
+color: "#34d399", text: "text-emerald-400", bg: "bg-emerald-950", border: "border-emerald-800",
+description: "Bot equilibrado. Corta en cuanto tiene la mano razonablemente limpia, sin buscar chinchón ni esperar demasiado.",
+draw: { mode: "smart", restoThreshold: 3 },
+discard: { mode: "default" },
+cut: { maxFree: 1, baseResto: 5, useScoreRules: false, scoreRules: DEFAULT_SCORE_RULES(), pursueChinchon: false, chinchonThreshold: 6, chinchonRunMode: false },
 },
-pickDiscard: angryDiscard },
+{ id: "daibot", name: "DaiBot", emoji: "🎀",
+color: "#f472b6", text: "text-pink-400", bg: "bg-pink-950", border: "border-pink-800",
+description: "Muy paciente. Solo corta cuando todas sus cartas están en melds, apuntando al -10 o al chinchón. Puede tardar muchas rondas.",
+draw: { mode: "smart", restoThreshold: 3 },
+discard: { mode: "default" },
+cut: { maxFree: 0, baseResto: 0, useScoreRules: false, scoreRules: DEFAULT_SCORE_RULES(), pursueChinchon: false, chinchonThreshold: 6, chinchonRunMode: false },
+},
+{ id: "candelaria", name: "Candelar-IA", emoji: "🔮",
+color: "#38bdf8", text: "text-sky-400", bg: "bg-sky-950", border: "border-sky-800",
+description: "Cambia de estrategia según el marcador: antes de los 50 puntos exige la mano perfecta, después afloja un poco y acepta hasta 3 de resto.",
+draw: { mode: "smart", restoThreshold: 3 },
+discard: { mode: "default" },
+cut: { maxFree: 1, baseResto: 3, useScoreRules: true, scoreRules: [{ minScore: 0, maxResto: 0 }, { minScore: 25, maxResto: 0 }, { minScore: 50, maxResto: 3 }, { minScore: 75, maxResto: 3 }], pursueChinchon: false, chinchonThreshold: 6, chinchonRunMode: false },
+},
+{ id: "tai", name: "T.A.I", emoji: "🔴",
+color: "#f87171", text: "text-red-400", bg: "bg-red-950", border: "border-red-800",
+description: "Agresiva en el descarte: siempre tira la carta con número más alto. Corta apenas tiene el resto bajo, sin esperar la perfección.",
+draw: { mode: "smart", restoThreshold: 3 },
+discard: { mode: "high_rank" },
+cut: { maxFree: 1, baseResto: 3, useScoreRules: false, scoreRules: DEFAULT_SCORE_RULES(), pursueChinchon: false, chinchonThreshold: 6, chinchonRunMode: false },
+},
+{ id: "martinmatic", name: "MartinMatic", emoji: "⚙️",
+color: "#9ca3af", text: "text-gray-400", bg: "bg-gray-900", border: "border-gray-700",
+description: "Juega agresivo en general, pero si arma una corrida de 4+ cartas del mismo palo cambia de modo y espera para hacer chinchón.",
+draw: { mode: "smart", restoThreshold: 3 },
+discard: { mode: "default" },
+cut: { maxFree: 1, baseResto: 5, useScoreRules: false, scoreRules: DEFAULT_SCORE_RULES(), pursueChinchon: false, chinchonThreshold: 6, chinchonRunMode: true },
+},
+{ id: "angrydai", name: "Angry DaiBot", emoji: "😈",
+color: "#a78bfa", text: "text-violet-400", bg: "bg-violet-950", border: "border-violet-800",
+description: "La IA más compleja: descarte óptimo calculado, umbrales de corte que cambian con el puntaje y caza el chinchón cuando está cerca.",
+draw: { mode: "aggressive" },
+discard: { mode: "optimal" },
+cut: { maxFree: 1, baseResto: 2, useScoreRules: true, scoreRules: [{ minScore: 0, maxResto: 2 }, { minScore: 25, maxResto: 2 }, { minScore: 50, maxResto: 3 }, { minScore: 75, maxResto: 1 }], pursueChinchon: true, chinchonThreshold: 6, chinchonRunMode: false },
+},
 ];
+
+const BUILTIN_BOTS = BUILTIN_BOT_CONFIGS.map(buildBotFromConfig);
 
 let BOT = [...BUILTIN_BOTS];
 function syncBots(customConfigs) { BOT = [...BUILTIN_BOTS, ...customConfigs.map(buildCustomBot)]; }
@@ -645,6 +706,13 @@ return (
 className="bg-gray-800 border border-gray-700 rounded px-3 py-1.5 text-sm text-gray-200 w-full focus:border-gray-500 focus:outline-none" />
 </div>
 <div className="mb-4">
+<label className="text-xs text-gray-500 block mb-1">Descripción <span className="text-gray-600">(opcional)</span></label>
+<textarea value={cfg.description ?? ""} maxLength={120} rows={2} onChange={e => upd("description", e.target.value)}
+placeholder="Describí la estrategia de tu bot en pocas palabras..."
+className="bg-gray-800 border border-gray-700 rounded px-3 py-1.5 text-sm text-gray-200 w-full focus:border-gray-500 focus:outline-none resize-none" />
+<div className="text-xs text-gray-600 text-right mt-0.5">{(cfg.description ?? "").length}/120</div>
+</div>
+<div className="mb-4">
 <label className="text-xs text-gray-500 block mb-1">Emoji</label>
 <div className="flex gap-1.5 flex-wrap">
 {CUSTOM_EMOJIS.map(e => (
@@ -669,35 +737,54 @@ style={{ background: cc.color, borderColor: cfg.colorIdx === i ? "#fff" : cc.col
 
 {/* Draw */}
 <div className="mb-4 bg-gray-800 border border-gray-700 rounded-lg p-3">
-<div className="text-xs font-bold mb-2" style={{ color: c.color }}>🃏 Robo (mazo vs descarte)</div>
-<div className="flex flex-col gap-1.5">
-{[["always_deck", "Siempre del mazo"], ["smart", "Inteligente (umbral)"], ["aggressive", "Agresivo (cualquier mejora)"]].map(([m, l]) => (
-<label key={m} className="flex items-center gap-2 text-sm text-gray-300 cursor-pointer">
+<div className="text-xs font-bold mb-1" style={{ color: c.color }}>🃏 Estrategia de robo</div>
+<p className="text-xs text-gray-500 mb-2 leading-snug">¿Cuándo toma cartas del pozo de descarte en lugar del mazo?</p>
+<div className="flex flex-col gap-2">
+{([
+["always_deck", "Solo del mazo", "Nunca toma del descarte. Predecible, no revela qué cartas le sirven."],
+["smart", "Inteligente (umbral)", "Toma del descarte solo si reduce el resto más que el umbral configurado. Balanceado."],
+["aggressive", "Agresivo", "Toma del descarte ante cualquier mejora de resto. Reactivo y oportunista."],
+] as [string, string, string][]).map(([m, title, desc]) => (
+<label key={m} className="flex items-start gap-2 cursor-pointer">
 <input type="radio" name="draw" checked={cfg.draw.mode === m} onChange={() => upd("draw.mode", m)}
-className="accent-amber-500" />
-{l}
+className="accent-amber-500 mt-0.5 shrink-0" />
+<div>
+<span className={`text-sm ${cfg.draw.mode === m ? "text-gray-100 font-medium" : "text-gray-300"}`}>{title}</span>
+<p className="text-xs text-gray-500 leading-snug">{desc}</p>
+</div>
 </label>
 ))}
 </div>
 {cfg.draw.mode === "smart" && (
-<div className="mt-2 flex items-center gap-2">
-<span className="text-xs text-gray-500">Umbral de resto:</span>
+<div className="mt-3 border border-gray-600 rounded p-2">
+<div className="flex items-center gap-2">
+<span className="text-xs text-gray-400">Umbral de resto:</span>
 <input type="range" min={1} max={10} value={cfg.draw.restoThreshold} onChange={e => upd("draw.restoThreshold", +e.target.value)}
 className="flex-1 accent-amber-500" />
-<span className="text-xs font-mono text-gray-300 w-5 text-right">{cfg.draw.restoThreshold}</span>
+<span className="text-xs font-mono text-amber-400 w-5 text-right">{cfg.draw.restoThreshold}</span>
+</div>
+<p className="text-xs text-gray-600 mt-1 leading-snug">Toma del descarte solo si reduce el resto en más de {cfg.draw.restoThreshold} pts. Mayor = más conservador.</p>
 </div>
 )}
 </div>
 
 {/* Discard */}
 <div className="mb-4 bg-gray-800 border border-gray-700 rounded-lg p-3">
-<div className="text-xs font-bold mb-2" style={{ color: c.color }}>🗑️ Descarte</div>
-<div className="flex flex-col gap-1.5">
-{[["default", "Mayor valor (descarta la carta suelta con más puntos)"], ["high_rank", "Mayor rango (descarta la carta suelta con número más alto)"], ["optimal", "Óptimo (prueba las 8 opciones, elige la mejor)"]].map(([m, l]) => (
-<label key={m} className="flex items-start gap-2 text-sm text-gray-300 cursor-pointer">
+<div className="text-xs font-bold mb-1" style={{ color: c.color }}>🗑️ Estrategia de descarte</div>
+<p className="text-xs text-gray-500 mb-2 leading-snug">¿Qué carta elimina de su mano en cada turno?</p>
+<div className="flex flex-col gap-2">
+{([
+["default", "Por valor (recomendado)", "Descarta la carta suelta con mayor valor en puntos. Minimiza el resto de forma directa."],
+["high_rank", "Por rango numérico", "Descarta la carta con número más alto aunque forme parte de un meld parcial. Más agresivo."],
+["optimal", "Óptimo (más lento)", "Evalúa las 8 posibles cartas a descartar y elige la que deja la mejor mano. Más inteligente pero más costoso computacionalmente."],
+] as [string, string, string][]).map(([m, title, desc]) => (
+<label key={m} className="flex items-start gap-2 cursor-pointer">
 <input type="radio" name="discard" checked={cfg.discard.mode === m} onChange={() => upd("discard.mode", m)}
-className="accent-amber-500 mt-0.5" />
-<span>{l}</span>
+className="accent-amber-500 mt-0.5 shrink-0" />
+<div>
+<span className={`text-sm ${cfg.discard.mode === m ? "text-gray-100 font-medium" : "text-gray-300"}`}>{title}</span>
+<p className="text-xs text-gray-500 leading-snug">{desc}</p>
+</div>
 </label>
 ))}
 </div>
@@ -705,53 +792,96 @@ className="accent-amber-500 mt-0.5" />
 
 {/* Cut */}
 <div className="mb-4 bg-gray-800 border border-gray-700 rounded-lg p-3">
-<div className="text-xs font-bold mb-2" style={{ color: c.color }}>✂️ Corte</div>
-<div className="flex items-center gap-3 mb-3">
-<span className="text-xs text-gray-500">Máx cartas sueltas:</span>
+<div className="text-xs font-bold mb-1" style={{ color: c.color }}>✂️ Condición de corte</div>
+<p className="text-xs text-gray-500 mb-3 leading-snug">¿Cuándo decide que su mano es suficientemente buena para cortar la ronda?</p>
+
+<div className="mb-3">
+<span className="text-xs font-medium text-gray-300 block mb-0.5">Cartas sueltas máximas</span>
+<p className="text-xs text-gray-500 mb-2 leading-snug">Máximo de cartas fuera de melds al cortar. 0 = todas en juego · 1 = puede quedar una carta suelta.</p>
 <div className="flex gap-1">
 {[0, 1].map(v => (
 <button key={v} onClick={() => upd("cut.maxFree", v)}
 className={`px-3 py-1 rounded text-xs font-medium border transition-all ${cfg.cut.maxFree === v ? "border-2" : "border-gray-600 text-gray-400 hover:border-gray-500"}`}
 style={cfg.cut.maxFree === v ? { borderColor: c.color, color: c.color, background: `${c.color}15` } : {}}>
-{v}
+{v === 0 ? "0 — sin sueltas" : "1 — una suelta"}
 </button>
 ))}
 </div>
 </div>
 
 {!cfg.cut.useScoreRules && (
-<div className="flex items-center gap-2 mb-3">
-<span className="text-xs text-gray-500">Máx resto para cortar:</span>
-<input type="range" min={0} max={10} value={cfg.cut.baseResto} onChange={e => upd("cut.baseResto", +e.target.value)}
-className="flex-1 accent-amber-500" />
-<span className="text-xs font-mono text-gray-300 w-5 text-right">{cfg.cut.baseResto}</span>
+<div className="mb-3">
+<div className="flex items-center justify-between mb-0.5">
+<span className="text-xs font-medium text-gray-300">Resto máximo para cortar</span>
+<span className="text-xs font-mono text-amber-400">{cfg.cut.baseResto} pts</span>
+</div>
+<p className="text-xs text-gray-500 mb-1.5 leading-snug">Suma máxima de las cartas sueltas para decidir cortar. El reglamento limita el corte a resto ≤ 5. 0 = solo corta sin puntos sueltos.</p>
+<input type="range" min={0} max={5} value={cfg.cut.baseResto} onChange={e => upd("cut.baseResto", +e.target.value)}
+className="w-full accent-amber-500" />
 </div>
 )}
 
-<label className="flex items-center gap-2 text-sm text-gray-300 cursor-pointer mb-2">
+<div className="border-t border-gray-700 pt-3 mb-3">
+<label className="flex items-start gap-2 cursor-pointer">
 <input type="checkbox" checked={cfg.cut.useScoreRules} onChange={e => upd("cut.useScoreRules", e.target.checked)}
-className="accent-amber-500" />
-Reglas por puntaje
+className="accent-amber-500 mt-0.5 shrink-0" />
+<div>
+<span className={`text-sm ${cfg.cut.useScoreRules ? "text-gray-100 font-medium" : "text-gray-300"}`}>Corte adaptativo por puntaje</span>
+<p className="text-xs text-gray-500 leading-snug">Cambia el umbral de resto según los puntos acumulados. Permite estrategias más conservadoras cuando va ganando o más agresivas cuando pierde terreno.</p>
+</div>
 </label>
 {cfg.cut.useScoreRules && (
-<div className="ml-5 flex flex-col gap-1.5 mb-2">
+<div className="ml-5 flex flex-col gap-2 mt-3">
 {cfg.cut.scoreRules.map((r, i) => (
 <div key={i} className="flex items-center gap-2">
-<span className="text-xs text-gray-500 w-20">{r.minScore === 0 ? "0-24 pts" : r.minScore === 25 ? "25-49 pts" : r.minScore === 50 ? "50-74 pts" : "75+ pts"}:</span>
-<span className="text-xs text-gray-400">resto ≤</span>
-<input type="range" min={0} max={10} value={r.maxResto} onChange={e => updRule(i, +e.target.value)}
+<span className="text-xs text-gray-500 w-20 shrink-0">{r.minScore === 0 ? "0–24 pts" : r.minScore === 25 ? "25–49 pts" : r.minScore === 50 ? "50–74 pts" : "75+ pts"}:</span>
+<span className="text-xs text-gray-400 shrink-0">resto ≤</span>
+<input type="range" min={0} max={5} value={r.maxResto} onChange={e => updRule(i, +e.target.value)}
 className="flex-1 accent-amber-500" />
-<span className="text-xs font-mono text-gray-300 w-5 text-right">{r.maxResto}</span>
+<span className="text-xs font-mono text-amber-400 w-5 text-right">{r.maxResto}</span>
 </div>
 ))}
 </div>
 )}
+</div>
 
-<label className="flex items-center gap-2 text-sm text-gray-300 cursor-pointer">
+<div className="border-t border-gray-700 pt-3 flex flex-col gap-3">
+<label className="flex items-start gap-2 cursor-pointer">
 <input type="checkbox" checked={cfg.cut.pursueChinchon} onChange={e => upd("cut.pursueChinchon", e.target.checked)}
-className="accent-amber-500" />
-🎯 Perseguir chinchón si está cerca
+className="accent-amber-500 mt-0.5 shrink-0" />
+<div>
+<span className={`text-sm ${cfg.cut.pursueChinchon ? "text-gray-100 font-medium" : "text-gray-300"}`}>🎯 Perseguir chinchón</span>
+<p className="text-xs text-gray-500 leading-snug">Si detecta que está cerca del chinchón, espera y solo corta con todas las cartas en melds (resto 0). Alto riesgo, alta recompensa.</p>
+</div>
 </label>
+{cfg.cut.pursueChinchon && (
+<div className="ml-5">
+<span className="text-xs font-medium text-gray-400 block mb-1.5">¿Cuándo activar el modo chinchón?</span>
+<div className="flex gap-1.5">
+{([5, 6] as number[]).map(v => (
+<button key={v} onClick={() => upd("cut.chinchonThreshold", v)}
+className={`px-3 py-1.5 rounded text-xs font-medium border transition-all ${(cfg.cut.chinchonThreshold ?? 6) === v ? "border-2" : "border-gray-600 text-gray-400 hover:border-gray-500"}`}
+style={(cfg.cut.chinchonThreshold ?? 6) === v ? { borderColor: c.color, color: c.color, background: `${c.color}15` } : {}}>
+{v === 6 ? "6 cartas — estricto" : "5 cartas — ambicioso"}
+</button>
+))}
+</div>
+<p className="text-xs text-gray-600 mt-1.5 leading-snug">
+{(cfg.cut.chinchonThreshold ?? 6) === 6
+? "Persigue el chinchón solo cuando le faltan 1–2 cartas para completarlo."
+: "Comienza a perseguir el chinchón antes, incluso cuando le faltan 2–3 cartas."}
+</p>
+</div>
+)}
+<label className="flex items-start gap-2 cursor-pointer">
+<input type="checkbox" checked={cfg.cut.chinchonRunMode ?? false} onChange={e => upd("cut.chinchonRunMode", e.target.checked)}
+className="accent-amber-500 mt-0.5 shrink-0" />
+<div>
+<span className={`text-sm ${cfg.cut.chinchonRunMode ? "text-gray-100 font-medium" : "text-gray-300"}`}>🏃 Modo corrida</span>
+<p className="text-xs text-gray-500 leading-snug">Si tiene 4 o más cartas del mismo palo consecutivas, espera para hacer chinchón (solo corta con todas en melds). Independiente del umbral de corte normal.</p>
+</div>
+</label>
+</div>
 </div>
 
 {/* Preview */}
@@ -772,6 +902,79 @@ className="px-4 py-1.5 rounded-md text-sm font-semibold text-white transition-co
 style={{ background: c.color }}>
 Guardar
 </button>
+</div>
+</div>
+);
+}
+
+/* -- BotViewer: read-only config display -- */
+function BotViewer({ config, onClose }) {
+const cfg = config;
+const color = cfg.color ?? CUSTOM_COLORS[cfg.colorIdx % CUSTOM_COLORS.length].color;
+const bg = cfg.bg ?? CUSTOM_COLORS[cfg.colorIdx % CUSTOM_COLORS.length].bg;
+const border = cfg.border ?? CUSTOM_COLORS[cfg.colorIdx % CUSTOM_COLORS.length].border;
+const drawLabels = { always_deck: "Solo del mazo", smart: "Inteligente (umbral)", aggressive: "Agresivo" };
+const discardLabels = { default: "Por valor", high_rank: "Por rango numérico", optimal: "Óptimo" };
+
+return (
+<div className="w-full max-w-lg bg-gray-900 border border-gray-800 rounded-xl p-4">
+<div className="flex items-center gap-2 mb-3">
+<span className="text-2xl">{cfg.emoji}</span>
+<span className="font-bold text-lg" style={{ color }}>{cfg.name}</span>
+<span className="text-xs text-gray-600 ml-auto">Solo lectura</span>
+</div>
+
+{cfg.description && (
+<div className={`mb-4 ${bg} border ${border} rounded-lg p-3`}>
+<p className="text-sm text-gray-200 leading-snug">{cfg.description}</p>
+</div>
+)}
+
+<div className="mb-3 bg-gray-800 border border-gray-700 rounded-lg p-3">
+<div className="text-xs font-bold mb-2" style={{ color }}>🃏 Robo</div>
+<div className="text-sm text-gray-200 font-medium">{drawLabels[cfg.draw.mode] ?? cfg.draw.mode}</div>
+{cfg.draw.mode === "smart" && <p className="text-xs text-gray-500 mt-0.5">Umbral de resto: {cfg.draw.restoThreshold} pts</p>}
+{cfg.draw.mode === "aggressive" && <p className="text-xs text-gray-500 mt-0.5">Toma del descarte ante cualquier mejora de resto.</p>}
+{cfg.draw.mode === "always_deck" && <p className="text-xs text-gray-500 mt-0.5">Nunca toma del descarte.</p>}
+</div>
+
+<div className="mb-3 bg-gray-800 border border-gray-700 rounded-lg p-3">
+<div className="text-xs font-bold mb-2" style={{ color }}>🗑️ Descarte</div>
+<div className="text-sm text-gray-200 font-medium">{discardLabels[cfg.discard.mode] ?? cfg.discard.mode}</div>
+<p className="text-xs text-gray-500 mt-0.5">
+{cfg.discard.mode === "default" && "Descarta la carta suelta con mayor valor en puntos."}
+{cfg.discard.mode === "high_rank" && "Descarta la carta con número más alto, sin importar melds parciales."}
+{cfg.discard.mode === "optimal" && "Evalúa las 8 posibles cartas y elige la que deja la mejor mano."}
+</p>
+</div>
+
+<div className="mb-4 bg-gray-800 border border-gray-700 rounded-lg p-3">
+<div className="text-xs font-bold mb-2" style={{ color }}>✂️ Corte</div>
+<div className="flex flex-col gap-1.5 text-sm">
+<div className="text-gray-300">Cartas sueltas máx: <span className="text-gray-100 font-medium">{cfg.cut.maxFree}</span></div>
+{!cfg.cut.useScoreRules && <div className="text-gray-300">Resto máx: <span className="text-gray-100 font-medium">{cfg.cut.baseResto} pts</span></div>}
+{cfg.cut.useScoreRules && (
+<div>
+<div className="text-xs text-gray-500 mb-1">Corte adaptativo por puntaje:</div>
+<div className="flex flex-col gap-0.5">
+{cfg.cut.scoreRules.map((r, i) => (
+<div key={i} className="text-xs flex gap-2">
+<span className="text-gray-500 w-20 shrink-0">{r.minScore === 0 ? "0–24 pts" : r.minScore === 25 ? "25–49 pts" : r.minScore === 50 ? "50–74 pts" : "75+ pts"}:</span>
+<span className="text-gray-300">resto ≤ <span className="text-gray-100 font-medium">{r.maxResto}</span></span>
+</div>
+))}
+</div>
+</div>
+)}
+{cfg.cut.chinchonRunMode && <div className="text-gray-300">🏃 <span className="text-gray-100">Modo corrida</span> — con 4+ cartas del mismo palo consecutivas, espera el chinchón.</div>}
+{cfg.cut.pursueChinchon && <div className="text-gray-300">🎯 <span className="text-gray-100">Persigue chinchón</span> — umbral de {cfg.cut.chinchonThreshold ?? 6} cartas en posición.</div>}
+</div>
+</div>
+
+<div className="text-xs text-gray-600 mb-4 leading-snug"><span className="font-medium text-gray-500">Resumen: </span>{generateDesc(cfg)}</div>
+
+<div className="flex justify-end">
+<button onClick={onClose} className="px-4 py-1.5 rounded-md text-sm text-gray-400 hover:text-gray-200 border border-gray-700 hover:border-gray-500 transition-colors">Cerrar</button>
 </div>
 </div>
 );
@@ -920,6 +1123,8 @@ const [tab, setTab] = useState("sim");
 // Custom bots
 const [customConfigs, setCustomConfigs] = useState(() => loadCustomConfigs());
 const [editingBot, setEditingBot] = useState(null); // null | config object being edited
+const [viewingBot, setViewingBot] = useState(null); // null | config object being viewed
+const [showDescMode, setShowDescMode] = useState<"desc" | "config">("desc");
 useEffect(() => { saveCustomConfigs(customConfigs); syncBots(customConfigs); }, [customConfigs]);
 // Initial sync on mount
 useEffect(() => { syncBots(customConfigs); }, []);
@@ -1029,7 +1234,8 @@ const playerCut = () => {
 if (!g || g.phase !== "playerDiscard" || g.selectedIdx === null) return;
 const testHand = g.pHand.filter((_, i) => i !== g.selectedIdx);
 const f7 = findBestMelds(testHand);
-if (f7.minFree > 1) { setG({ ...g, message: "No podés cortar - más de 1 carta suelta" }); return; }
+if (f7.minFree > 1) { setG({ ...g, message: "No podés cortar — más de 1 carta suelta" }); return; }
+if (f7.resto > 5) { setG({ ...g, message: "No podés cortar — el resto supera 5 puntos" }); return; }
 const ng = { ...g, pHand: [...g.pHand], discardPile: [...g.discardPile] };
 const disc = ng.pHand.splice(ng.selectedIdx, 1)[0]; ng.discardPile.push(disc);
 const cs = cutScore(ng.pHand); const bM = findBestMelds(ng.bHand);
@@ -1072,7 +1278,8 @@ const totalR = totalRounds;
 let canPlayerCut = false;
 if (g?.phase === "playerDiscard" && g.selectedIdx !== null) {
 const test = g.pHand.filter((_, i) => i !== g.selectedIdx);
-canPlayerCut = findBestMelds(test).minFree <= 1;
+const testMelds = findBestMelds(test);
+canPlayerCut = testMelds.minFree <= 1 && testMelds.resto <= 5;
 }
 const pML = g?.pHand ? findBestMelds(g.pHand) : null;
 const bML = g?.bHand ? findBestMelds(g.bHand) : null;
@@ -1086,7 +1293,7 @@ return (
 <p className="text-gray-600 text-xs mb-3">Baraja española + 2 comodines · {BOT.length} bots</p>
 
   <div className="flex gap-0.5 bg-gray-900 rounded-lg p-1 mb-4">
-    {[["sim", "Simulación"], ["match", "Ver Partida"], ["play", "Jugar"], ["custom", "Crear Bot"]].map(([k, l]) => (
+    {[["sim", "Simulación"], ["match", "Ver Partida"], ["play", "Jugar"], ["custom", "Bots"]].map(([k, l]) => (
       <button key={k} onClick={() => setTab(k)} className={`px-3 py-1.5 rounded-md text-xs font-medium transition-colors ${tab === k ? "bg-gray-700 text-white" : "text-gray-500 hover:text-gray-300"}`}>{l}</button>
     ))}
   </div>
@@ -1270,49 +1477,12 @@ return (
     </div>
   )}
 
-  {/* --- CUSTOM --- */}
+  {/* --- BOTS --- */}
   {tab === "custom" && (
     <div className="flex flex-col items-center w-full max-w-lg">
-      {!editingBot ? (
-        <div className="w-full">
-          <p className="text-gray-400 text-sm mb-4 text-center">Creá y configurá tus propios bots</p>
-          {customConfigs.length === 0 && (
-            <div className="text-center text-gray-600 text-sm mb-4 bg-gray-900 border border-gray-800 rounded-lg p-6">
-              Ningún bot custom aún. ¡Creá uno!
-            </div>
-          )}
-          {customConfigs.length > 0 && (
-            <div className="flex flex-wrap gap-2 justify-center mb-4">
-              {customConfigs.map((cfg, i) => {
-                const cc = CUSTOM_COLORS[cfg.colorIdx % CUSTOM_COLORS.length];
-                return (
-                  <div key={cfg.id} className="bg-gray-900 border border-gray-800 rounded-lg px-4 py-3 w-44 relative group">
-                    <div className="font-bold text-sm mb-0.5" style={{ color: cc.color }}>{cfg.emoji} {cfg.name}</div>
-                    <div className="text-gray-500 text-xs mb-2 leading-tight">{generateDesc(cfg)}</div>
-                    <div className="flex gap-1.5">
-                      <button onClick={() => setEditingBot(JSON.parse(JSON.stringify(cfg)))}
-                        className="text-xs text-gray-400 hover:text-gray-200 bg-gray-800 px-2 py-0.5 rounded">Editar</button>
-                      <button onClick={() => setCustomConfigs(prev => prev.filter(c => c.id !== cfg.id))}
-                        className="text-xs text-red-400 hover:text-red-300 bg-gray-800 px-2 py-0.5 rounded">Borrar</button>
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          )}
-          {customConfigs.length < 4 && (
-            <div className="flex justify-center">
-              <button onClick={() => setEditingBot(DEFAULT_CUSTOM_CONFIG())}
-                className="bg-amber-600 hover:bg-amber-500 text-white px-5 py-2 rounded-md text-sm font-semibold active:scale-95 transition-all">
-                + Nuevo Bot
-              </button>
-            </div>
-          )}
-          {customConfigs.length >= 4 && (
-            <div className="text-xs text-gray-600 text-center">Máximo 4 bots custom</div>
-          )}
-        </div>
-      ) : (
+      {viewingBot ? (
+        <BotViewer config={viewingBot} onClose={() => setViewingBot(null)} />
+      ) : editingBot ? (
         <BotEditor config={editingBot} onCancel={() => setEditingBot(null)} onSave={(cfg) => {
           setCustomConfigs(prev => {
             const idx = prev.findIndex(c => c.id === cfg.id);
@@ -1321,6 +1491,82 @@ return (
           });
           setEditingBot(null);
         }} />
+      ) : (
+        <div className="w-full">
+          {/* Header with description/config toggle */}
+          <div className="flex items-center justify-between mb-4">
+            <p className="text-gray-400 text-sm">Todos los bots</p>
+            <button onClick={() => setShowDescMode(m => m === "desc" ? "config" : "desc")}
+              className="text-xs text-gray-500 hover:text-gray-300 bg-gray-800 px-2.5 py-1 rounded border border-gray-700 hover:border-gray-600 transition-colors">
+              {showDescMode === "desc" ? "Ver resumen config" : "Ver descripción"}
+            </button>
+          </div>
+
+          {/* Built-in bots */}
+          <p className="text-xs text-gray-600 uppercase tracking-wider mb-2">Preconstruidos</p>
+          <div className="flex flex-wrap gap-2 justify-center mb-5">
+            {BUILTIN_BOT_CONFIGS.map(cfg => (
+              <div key={cfg.id} className={`${cfg.bg} border ${cfg.border} rounded-lg px-4 py-3 w-44`}>
+                <div className="font-bold text-sm mb-0.5" style={{ color: cfg.color }}>{cfg.emoji} {cfg.name}</div>
+                <div className="text-gray-500 text-xs mb-2 leading-tight min-h-[2rem]">
+                  {showDescMode === "desc"
+                    ? (cfg.description || <span className="italic text-gray-600">{generateDesc(cfg)}</span>)
+                    : generateDesc(cfg)}
+                </div>
+                <button onClick={() => setViewingBot(cfg)}
+                  className="text-xs text-gray-400 hover:text-gray-200 bg-gray-900/60 px-2 py-0.5 rounded transition-colors">
+                  Ver config
+                </button>
+              </div>
+            ))}
+          </div>
+
+          {/* Custom bots */}
+          <div className="border-t border-gray-800 pt-4 mb-4">
+            <div className="flex items-center justify-between mb-2">
+              <p className="text-xs text-gray-600 uppercase tracking-wider">Mis bots</p>
+              {customConfigs.length < 4 && (
+                <button onClick={() => setEditingBot(DEFAULT_CUSTOM_CONFIG())}
+                  className="bg-amber-600 hover:bg-amber-500 text-white px-3 py-1 rounded text-xs font-semibold active:scale-95 transition-all">
+                  + Nuevo
+                </button>
+              )}
+            </div>
+            {customConfigs.length === 0 && (
+              <div className="text-center text-gray-600 text-sm bg-gray-900 border border-gray-800 rounded-lg p-5">
+                Ningún bot custom aún. ¡Creá uno!
+              </div>
+            )}
+            {customConfigs.length > 0 && (
+              <div className="flex flex-wrap gap-2 justify-center">
+                {customConfigs.map((cfg) => {
+                  const cc = CUSTOM_COLORS[cfg.colorIdx % CUSTOM_COLORS.length];
+                  return (
+                    <div key={cfg.id} className="bg-gray-900 border border-gray-800 rounded-lg px-4 py-3 w-44">
+                      <div className="font-bold text-sm mb-0.5" style={{ color: cc.color }}>{cfg.emoji} {cfg.name}</div>
+                      <div className="text-gray-500 text-xs mb-2 leading-tight min-h-[2rem]">
+                        {showDescMode === "desc"
+                          ? (cfg.description || <span className="italic text-gray-600">{generateDesc(cfg)}</span>)
+                          : generateDesc(cfg)}
+                      </div>
+                      <div className="flex gap-1.5 flex-wrap">
+                        <button onClick={() => setViewingBot(cfg)}
+                          className="text-xs text-gray-400 hover:text-gray-200 bg-gray-800 px-2 py-0.5 rounded">Ver</button>
+                        <button onClick={() => setEditingBot(JSON.parse(JSON.stringify(cfg)))}
+                          className="text-xs text-gray-400 hover:text-gray-200 bg-gray-800 px-2 py-0.5 rounded">Editar</button>
+                        <button onClick={() => setCustomConfigs(prev => prev.filter(c => c.id !== cfg.id))}
+                          className="text-xs text-red-400 hover:text-red-300 bg-gray-800 px-2 py-0.5 rounded">Borrar</button>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+            {customConfigs.length >= 4 && (
+              <div className="text-xs text-gray-600 text-center mt-3">Máximo 4 bots custom</div>
+            )}
+          </div>
+        </div>
       )}
     </div>
   )}
