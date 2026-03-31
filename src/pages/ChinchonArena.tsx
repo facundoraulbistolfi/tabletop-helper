@@ -801,13 +801,13 @@ className="accent-amber-500 mt-0.5 shrink-0" />
 
 <div className="mb-3">
 <span className="text-xs font-medium text-gray-300 block mb-0.5">Cartas sueltas máximas</span>
-<p className="text-xs text-gray-500 mb-2 leading-snug">Máximo de cartas fuera de melds al cortar. 0 = todas en juego · 1 = una suelta · 2 = dos sueltas (agresivo).</p>
-<div className="flex gap-1 flex-wrap">
-{[0, 1, 2].map(v => (
+<p className="text-xs text-gray-500 mb-2 leading-snug">Máximo de cartas fuera de melds al cortar. 0 = todas en juego · 1 = puede quedar una carta suelta.</p>
+<div className="flex gap-1">
+{[0, 1].map(v => (
 <button key={v} onClick={() => upd("cut.maxFree", v)}
 className={`px-3 py-1 rounded text-xs font-medium border transition-all ${cfg.cut.maxFree === v ? "border-2" : "border-gray-600 text-gray-400 hover:border-gray-500"}`}
 style={cfg.cut.maxFree === v ? { borderColor: c.color, color: c.color, background: `${c.color}15` } : {}}>
-{v === 0 ? "0 — sin sueltas" : v === 1 ? "1 — una suelta" : "2 — dos sueltas"}
+{v === 0 ? "0 — sin sueltas" : "1 — una suelta"}
 </button>
 ))}
 </div>
