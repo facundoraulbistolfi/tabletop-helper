@@ -570,61 +570,37 @@ boxShadow: isActive ? `0 0 0 1px ${botB.color}` : "none",
 );
 }
 
-/* -- Win rate evolution chart -- */
-function WinRateChart({ data, bot0, bot1 }) {
-if (data.length < 2) return null;
-const W = 500, H = 130;
-const PAD = { top: 12, right: 14, bottom: 22, left: 36 };
+/* -- Shared line chart for rate evolution (winrate + sweep) -- */
+function RateChart({ data, bot0, bot1 }: { data: {x: number, y0: number, y1: number}[], bot0: any, bot1: any }) {
+const W = 500, H = 140;
+const PAD = { top: 14, right: 52, bottom: 22, left: 38 };
 const plotW = W - PAD.left - PAD.right;
 const plotH = H - PAD.top - PAD.bottom;
-const rates = data.map(d => d.rate);
-const minR = Math.max(0, Math.floor((Math.min(...rates) - 4) / 5) * 5);
-const maxR = Math.min(100, Math.ceil((Math.max(...rates) + 4) / 5) * 5);
-const rng = maxR - minR || 1;
-const toX = (i) => PAD.left + (i / (data.length - 1)) * plotW;
-const toY = (r) => PAD.top + (1 - (r - minR) / rng) * plotH;
-const path0 = data.map((d, i) => `${i === 0 ? "M" : "L"}${toX(i).toFixed(1)},${toY(d.rate).toFixed(1)}`).join(" ");
-const path1 = data.map((d, i) => `${i === 0 ? "M" : "L"}${toX(i).toFixed(1)},${toY(100 - d.rate).toFixed(1)}`).join(" ");
-const midTick = Math.floor(data.length / 2);
-return (
-<svg width="100%" viewBox={`0 0 ${W} ${H}`} style={{ display: "block" }}>
-{[25, 50, 75].filter(v => v > minR && v < maxR).map(v => (
-<g key={v}>
-<line x1={PAD.left} x2={W - PAD.right} y1={toY(v)} y2={toY(v)}
-stroke={v === 50 ? "#4b5563" : "#1f2937"} strokeWidth={v === 50 ? 1 : 0.5} strokeDasharray={v === 50 ? "4,3" : undefined} />
-<text x={PAD.left - 4} y={toY(v) + 3.5} textAnchor="end" fill="#6b7280" fontSize="9">{v}%</text>
-</g>
-))}
-<text x={PAD.left - 4} y={PAD.top + 4} textAnchor="end" fill="#4b5563" fontSize="9">{maxR}%</text>
-<text x={PAD.left - 4} y={H - PAD.bottom + 4} textAnchor="end" fill="#4b5563" fontSize="9">{minR}%</text>
-<line x1={PAD.left} x2={PAD.left} y1={PAD.top} y2={H - PAD.bottom} stroke="#374151" strokeWidth="1" />
-<line x1={PAD.left} x2={W - PAD.right} y1={H - PAD.bottom} y2={H - PAD.bottom} stroke="#374151" strokeWidth="1" />
-<text x={PAD.left} y={H - 5} textAnchor="middle" fill="#4b5563" fontSize="8">{data[0].games}</text>
-<text x={PAD.left + plotW / 2} y={H - 5} textAnchor="middle" fill="#374151" fontSize="8">{data[midTick].games}</text>
-<text x={W - PAD.right} y={H - 5} textAnchor="middle" fill="#4b5563" fontSize="8">{data[data.length - 1].games}</text>
-<path d={path1} fill="none" stroke={bot1.color} strokeWidth="1.5" opacity="0.75" />
-<path d={path0} fill="none" stroke={bot0.color} strokeWidth="1.5" opacity="0.75" />
-<text x={W - PAD.right + 2} y={toY(data[data.length - 1].rate) + 3.5} fill={bot0.color} fontSize="8">{data[data.length - 1].rate.toFixed(4)}%</text>
-<text x={W - PAD.right + 2} y={toY(100 - data[data.length - 1].rate) + 3.5} fill={bot1.color} fontSize="8">{(100 - data[data.length - 1].rate).toFixed(4)}%</text>
-</svg>
-);
+// Empty state
+if (data.length < 2) {
+  return (
+    <svg width="100%" viewBox={`0 0 ${W} ${H}`} style={{ display: "block" }}>
+      {[25, 50, 75].map(v => (
+        <g key={v}>
+          <line x1={PAD.left} x2={W - PAD.right} y1={PAD.top + (1 - v / 100) * plotH} y2={PAD.top + (1 - v / 100) * plotH}
+            stroke={v === 50 ? "#374151" : "#1f2937"} strokeWidth={v === 50 ? 1 : 0.5} strokeDasharray="4,3" />
+          <text x={PAD.left - 4} y={PAD.top + (1 - v / 100) * plotH + 3.5} textAnchor="end" fill="#374151" fontSize="9">{v}%</text>
+        </g>
+      ))}
+      <line x1={PAD.left} x2={PAD.left} y1={PAD.top} y2={H - PAD.bottom} stroke="#374151" strokeWidth="1" />
+      <line x1={PAD.left} x2={W - PAD.right} y1={H - PAD.bottom} y2={H - PAD.bottom} stroke="#374151" strokeWidth="1" />
+      <text x={PAD.left + plotW / 2} y={H / 2 + 4} textAnchor="middle" fill="#374151" fontSize="11">Esperando datos…</text>
+    </svg>
+  );
 }
-
-/* -- Sweep rate evolution chart -- */
-function SweepRateChart({ data, bot0, bot1 }) {
-if (data.length < 2) return null;
-const W = 500, H = 130;
-const PAD = { top: 12, right: 14, bottom: 22, left: 36 };
-const plotW = W - PAD.left - PAD.right;
-const plotH = H - PAD.top - PAD.bottom;
-const allRates = data.flatMap(d => [d.rate0, d.rate1]);
-const minR = Math.max(0, Math.floor((Math.min(...allRates) - 4) / 5) * 5);
-const maxR = Math.min(100, Math.ceil((Math.max(...allRates) + 4) / 5) * 5);
+const allY = data.flatMap(d => [d.y0, d.y1]);
+const minR = Math.max(0, Math.floor((Math.min(...allY) - 4) / 5) * 5);
+const maxR = Math.min(100, Math.ceil((Math.max(...allY) + 4) / 5) * 5);
 const rng = maxR - minR || 1;
 const toX = (i) => PAD.left + (i / (data.length - 1)) * plotW;
 const toY = (r) => PAD.top + (1 - (r - minR) / rng) * plotH;
-const path0 = data.map((d, i) => `${i === 0 ? "M" : "L"}${toX(i).toFixed(1)},${toY(d.rate0).toFixed(1)}`).join(" ");
-const path1 = data.map((d, i) => `${i === 0 ? "M" : "L"}${toX(i).toFixed(1)},${toY(d.rate1).toFixed(1)}`).join(" ");
+const path0 = data.map((d, i) => `${i === 0 ? "M" : "L"}${toX(i).toFixed(1)},${toY(d.y0).toFixed(1)}`).join(" ");
+const path1 = data.map((d, i) => `${i === 0 ? "M" : "L"}${toX(i).toFixed(1)},${toY(d.y1).toFixed(1)}`).join(" ");
 const midTick = Math.floor(data.length / 2);
 return (
 <svg width="100%" viewBox={`0 0 ${W} ${H}`} style={{ display: "block" }}>
@@ -639,13 +615,13 @@ stroke={v === 50 ? "#4b5563" : "#1f2937"} strokeWidth={v === 50 ? 1 : 0.5} strok
 <text x={PAD.left - 4} y={H - PAD.bottom + 4} textAnchor="end" fill="#4b5563" fontSize="9">{minR}%</text>
 <line x1={PAD.left} x2={PAD.left} y1={PAD.top} y2={H - PAD.bottom} stroke="#374151" strokeWidth="1" />
 <line x1={PAD.left} x2={W - PAD.right} y1={H - PAD.bottom} y2={H - PAD.bottom} stroke="#374151" strokeWidth="1" />
-<text x={PAD.left} y={H - 5} textAnchor="middle" fill="#4b5563" fontSize="8">{data[0].pairs}</text>
-<text x={PAD.left + plotW / 2} y={H - 5} textAnchor="middle" fill="#374151" fontSize="8">{data[midTick].pairs}</text>
-<text x={W - PAD.right} y={H - 5} textAnchor="middle" fill="#4b5563" fontSize="8">{data[data.length - 1].pairs}</text>
+<text x={PAD.left} y={H - 5} textAnchor="middle" fill="#4b5563" fontSize="8">{data[0].x}</text>
+<text x={PAD.left + plotW / 2} y={H - 5} textAnchor="middle" fill="#374151" fontSize="8">{data[midTick].x}</text>
+<text x={W - PAD.right} y={H - 5} textAnchor="middle" fill="#4b5563" fontSize="8">{data[data.length - 1].x}</text>
 <path d={path1} fill="none" stroke={bot1.color} strokeWidth="1.5" opacity="0.75" />
 <path d={path0} fill="none" stroke={bot0.color} strokeWidth="1.5" opacity="0.75" />
-<text x={W - PAD.right + 2} y={toY(data[data.length - 1].rate0) + 3.5} fill={bot0.color} fontSize="8">{data[data.length - 1].rate0.toFixed(4)}%</text>
-<text x={W - PAD.right + 2} y={toY(data[data.length - 1].rate1) + 3.5} fill={bot1.color} fontSize="8">{data[data.length - 1].rate1.toFixed(4)}%</text>
+<text x={W - PAD.right + 2} y={toY(data[data.length - 1].y0) + 3.5} fill={bot0.color} fontSize="8">{data[data.length - 1].y0.toFixed(4)}%</text>
+<text x={W - PAD.right + 2} y={toY(data[data.length - 1].y1) + 3.5} fill={bot1.color} fontSize="8">{data[data.length - 1].y1.toFixed(4)}%</text>
 </svg>
 );
 }
@@ -1263,6 +1239,8 @@ const [chinchonWins, setChinchonWins] = useState([0, 0]);
 const [simRun, setSimRun] = useState(false);
 const [prog, setProg] = useState(0);
 const [promptCopied, setPromptCopied] = useState(false);
+const [chartTab, setChartTab] = useState<"winrate" | "sweep">("winrate");
+const [chartZoom, setChartZoom] = useState<number | null>(null);
 const stopRef = useRef(false);
 
 // Match viewer
@@ -1564,41 +1542,56 @@ return (
         </div>
       )}
 
-      {winRateHistory.length >= 2 && (
-        <div className="w-full bg-gray-900 border border-gray-800 rounded-xl p-3 mb-4">
-          <h2 className="text-xs text-gray-500 text-center mb-1 uppercase tracking-wider">Evolución del winrate</h2>
-          <p className="text-xs text-gray-600 text-center mb-2">Si la línea se estabiliza, la muestra es suficiente</p>
-          <WinRateChart data={winRateHistory} bot0={BOT[simB0]} bot1={BOT[simB1]} />
-          <div className="flex justify-center gap-4 mt-1 text-xs">
-            <span className="inline-flex items-center gap-1" style={{ color: BOT[simB0].color }}>
-              <span className="rounded" style={{ width: "10px", height: "2px", background: BOT[simB0].color, display: "inline-block" }} />
-              {BOT[simB0].name}
-            </span>
-            <span className="inline-flex items-center gap-1" style={{ color: BOT[simB1].color }}>
-              <span className="rounded" style={{ width: "10px", height: "2px", background: BOT[simB1].color, display: "inline-block" }} />
-              {BOT[simB1].name}
-            </span>
+      {/* Combined charts panel — always visible */}
+      {(() => {
+        const winData = winRateHistory.map(d => ({ x: d.games, y0: d.rate, y1: 100 - d.rate }));
+        const sweepData = sweepRateHistory.map(d => ({ x: d.pairs, y0: d.rate0, y1: d.rate1 }));
+        const activeData = chartTab === "winrate" ? winData : sweepData;
+        const sliced = chartZoom ? activeData.slice(-chartZoom) : activeData;
+        const ZOOM_OPTS: (number | null)[] = [null, 200, 100, 50, 20];
+        return (
+          <div className="w-full bg-gray-900 border border-gray-800 rounded-xl p-3 mb-4">
+            {/* Header row: tabs left, zoom right */}
+            <div className="flex items-center justify-between mb-2 flex-wrap gap-2">
+              <div className="flex gap-0.5 bg-gray-800 rounded-lg p-0.5">
+                <button onClick={() => setChartTab("winrate")}
+                  className={`px-2.5 py-1 rounded-md text-xs font-medium transition-colors ${chartTab === "winrate" ? "bg-gray-700 text-white" : "text-gray-500 hover:text-gray-300"}`}>
+                  Winrate
+                </button>
+                <button onClick={() => setChartTab("sweep")}
+                  className={`px-2.5 py-1 rounded-md text-xs font-medium transition-colors ${chartTab === "sweep" ? "bg-gray-700 text-white" : "text-gray-500 hover:text-gray-300"}`}>
+                  Corridas espejo
+                </button>
+              </div>
+              <div className="flex gap-0.5 items-center">
+                <span className="text-xs text-gray-600 mr-1">Zoom:</span>
+                {ZOOM_OPTS.map(z => (
+                  <button key={z ?? "all"} onClick={() => setChartZoom(z)}
+                    className={`px-1.5 py-0.5 rounded text-xs border transition-all ${chartZoom === z ? "border-gray-500 text-gray-200 bg-gray-700" : "border-gray-700 text-gray-600 hover:text-gray-400 hover:border-gray-600"}`}>
+                    {z === null ? "Todo" : z}
+                  </button>
+                ))}
+              </div>
+            </div>
+            <p className="text-xs text-gray-600 text-center mb-2">
+              {chartTab === "winrate"
+                ? "Partidas ganadas acumuladas · si la línea se estabiliza, la muestra es suficiente"
+                : "% de corridas donde cada bot gana ambas partidas espejo (sin empates)"}
+            </p>
+            <RateChart data={sliced} bot0={BOT[simB0]} bot1={BOT[simB1]} />
+            <div className="flex justify-center gap-4 mt-1.5 text-xs">
+              <span className="inline-flex items-center gap-1" style={{ color: BOT[simB0].color }}>
+                <span className="rounded" style={{ width: "10px", height: "2px", background: BOT[simB0].color, display: "inline-block" }} />
+                {BOT[simB0].name}
+              </span>
+              <span className="inline-flex items-center gap-1" style={{ color: BOT[simB1].color }}>
+                <span className="rounded" style={{ width: "10px", height: "2px", background: BOT[simB1].color, display: "inline-block" }} />
+                {BOT[simB1].name}
+              </span>
+            </div>
           </div>
-        </div>
-      )}
-
-      {sweepRateHistory.length >= 2 && (
-        <div className="w-full bg-gray-900 border border-yellow-900/30 rounded-xl p-3 mb-4">
-          <h2 className="text-xs text-yellow-600 text-center mb-1 uppercase tracking-wider">Evolución del doble espejo</h2>
-          <p className="text-xs text-gray-600 text-center mb-2">% de corridas donde cada bot gana ambas partidas espejo</p>
-          <SweepRateChart data={sweepRateHistory} bot0={BOT[simB0]} bot1={BOT[simB1]} />
-          <div className="flex justify-center gap-4 mt-1 text-xs">
-            <span className="inline-flex items-center gap-1" style={{ color: BOT[simB0].color }}>
-              <span className="rounded" style={{ width: "10px", height: "2px", background: BOT[simB0].color, display: "inline-block" }} />
-              {BOT[simB0].name}
-            </span>
-            <span className="inline-flex items-center gap-1" style={{ color: BOT[simB1].color }}>
-              <span className="rounded" style={{ width: "10px", height: "2px", background: BOT[simB1].color, display: "inline-block" }} />
-              {BOT[simB1].name}
-            </span>
-          </div>
-        </div>
-      )}
+        );
+      })()}
 
       {(chinchonWins[0] + chinchonWins[1]) > 0 && (
         <div className="w-full bg-gray-900 border border-gray-800 rounded-lg p-3 mb-4">
