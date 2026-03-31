@@ -254,7 +254,7 @@ if (cut.pursueChinchon && nearChinchonCustom(hand, cut.chinchonThreshold ?? 6)) 
 const maxR = cut.useScoreRules
 ? ([...cut.scoreRules].reverse().find(r => (score ?? 0) >= r.minScore)?.maxResto ?? cut.baseResto)
 : cut.baseResto;
-return m7.minFree <= cut.maxFree && m7.resto <= maxR;
+return m7.minFree <= cut.maxFree && m7.resto <= Math.min(maxR, 5);
 };
 }
 
@@ -282,7 +282,18 @@ pickDiscard: cfg.discard.mode === "high_rank" ? taiDiscard : cfg.discard.mode ==
 }
 
 function loadCustomConfigs() {
-try { return JSON.parse(localStorage.getItem("chinchon-arena-custom-bots") || "[]"); } catch { return []; }
+try {
+const configs = JSON.parse(localStorage.getItem("chinchon-arena-custom-bots") || "[]");
+// Clamp resto values to the legal game maximum of 5
+return configs.map(cfg => ({
+...cfg,
+cut: {
+...cfg.cut,
+baseResto: Math.min(cfg.cut?.baseResto ?? 5, 5),
+scoreRules: (cfg.cut?.scoreRules ?? []).map(r => ({ ...r, maxResto: Math.min(r.maxResto ?? 5, 5) })),
+},
+}));
+} catch { return []; }
 }
 function saveCustomConfigs(configs) {
 localStorage.setItem("chinchon-arena-custom-bots", JSON.stringify(configs));
@@ -763,8 +774,8 @@ style={cfg.cut.maxFree === v ? { borderColor: c.color, color: c.color, backgroun
 <span className="text-xs font-medium text-gray-300">Resto máximo para cortar</span>
 <span className="text-xs font-mono text-amber-400">{cfg.cut.baseResto} pts</span>
 </div>
-<p className="text-xs text-gray-500 mb-1.5 leading-snug">Suma máxima de las cartas sueltas para decidir cortar. 0 = solo corta sin puntos sueltos. Mayor = más agresivo.</p>
-<input type="range" min={0} max={10} value={cfg.cut.baseResto} onChange={e => upd("cut.baseResto", +e.target.value)}
+<p className="text-xs text-gray-500 mb-1.5 leading-snug">Suma máxima de las cartas sueltas para decidir cortar. El reglamento limita el corte a resto ≤ 5. 0 = solo corta sin puntos sueltos.</p>
+<input type="range" min={0} max={5} value={cfg.cut.baseResto} onChange={e => upd("cut.baseResto", +e.target.value)}
 className="w-full accent-amber-500" />
 </div>
 )}
@@ -784,7 +795,7 @@ className="accent-amber-500 mt-0.5 shrink-0" />
 <div key={i} className="flex items-center gap-2">
 <span className="text-xs text-gray-500 w-20 shrink-0">{r.minScore === 0 ? "0–24 pts" : r.minScore === 25 ? "25–49 pts" : r.minScore === 50 ? "50–74 pts" : "75+ pts"}:</span>
 <span className="text-xs text-gray-400 shrink-0">resto ≤</span>
-<input type="range" min={0} max={10} value={r.maxResto} onChange={e => updRule(i, +e.target.value)}
+<input type="range" min={0} max={5} value={r.maxResto} onChange={e => updRule(i, +e.target.value)}
 className="flex-1 accent-amber-500" />
 <span className="text-xs font-mono text-amber-400 w-5 text-right">{r.maxResto}</span>
 </div>
@@ -1099,7 +1110,8 @@ const playerCut = () => {
 if (!g || g.phase !== "playerDiscard" || g.selectedIdx === null) return;
 const testHand = g.pHand.filter((_, i) => i !== g.selectedIdx);
 const f7 = findBestMelds(testHand);
-if (f7.minFree > 1) { setG({ ...g, message: "No podés cortar - más de 1 carta suelta" }); return; }
+if (f7.minFree > 1) { setG({ ...g, message: "No podés cortar — más de 1 carta suelta" }); return; }
+if (f7.resto > 5) { setG({ ...g, message: "No podés cortar — el resto supera 5 puntos" }); return; }
 const ng = { ...g, pHand: [...g.pHand], discardPile: [...g.discardPile] };
 const disc = ng.pHand.splice(ng.selectedIdx, 1)[0]; ng.discardPile.push(disc);
 const cs = cutScore(ng.pHand); const bM = findBestMelds(ng.bHand);
@@ -1142,7 +1154,8 @@ const totalR = totalRounds;
 let canPlayerCut = false;
 if (g?.phase === "playerDiscard" && g.selectedIdx !== null) {
 const test = g.pHand.filter((_, i) => i !== g.selectedIdx);
-canPlayerCut = findBestMelds(test).minFree <= 1;
+const testMelds = findBestMelds(test);
+canPlayerCut = testMelds.minFree <= 1 && testMelds.resto <= 5;
 }
 const pML = g?.pHand ? findBestMelds(g.pHand) : null;
 const bML = g?.bHand ? findBestMelds(g.bHand) : null;
