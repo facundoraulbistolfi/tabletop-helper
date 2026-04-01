@@ -1,10 +1,10 @@
-# tabletop-helper — CLAUDE.md
+# tabletop-helper — AGENTS.md
 
 SPA estática con utilidades y minijuegos para juegos de mesa, cartas, puzzles y scorekeeping casual. El producto corre entero en el navegador y se publica en GitHub Pages.
 
 Sitio público: **https://facundoraulbistolfi.github.io/tabletop-helper/**
 
-Este archivo y `AGENTS.md` deben mantenerse alineados. Si cambia el catálogo, la arquitectura o las convenciones, actualizar ambos.
+Este archivo y `CLAUDE.md` deben mantenerse alineados. Si cambia el catálogo, la arquitectura o las convenciones, actualizar ambos.
 
 ---
 

@@ -1,5 +1,5 @@
 // @ts-nocheck
-import { useState, useRef, useCallback, useEffect } from "react";
+import { startTransition, useCallback, useEffect, useMemo, useReducer, useRef, useState } from "react";
 import {
   SUITS, RANKS, RANK_ORDER, JOKER_REST,
   isJoker, cardRest, sameCard,
@@ -7,7 +7,7 @@ import {
   findAllMelds, findBestMelds,
   checkChinchon,
   legalDiscardIndex, cutScore,
-  shouldDrawDiscard, playRoundScored,
+  shouldDrawDiscard,
 } from "../lib/chinchon-bot-game";
 import {
   MIN_SIMULATIONS_BEFORE_STABLE_STOP,
@@ -23,14 +23,165 @@ import {
   buildTournamentMatchSnapshot,
   buildTournamentCeremonyData,
   createEmptyTournamentResults,
+  isValidTournamentResults,
 } from "../lib/chinchon-tournament";
+import { generateReplayPair } from "../lib/chinchon-arena-sim";
+import { LabAccordionSection, LabPanel, LabTabBar, StickyActionBar } from "./chinchon-lab/Layout";
+import ChinchonLabWorker from "../workers/chinchon-lab.worker?worker";
+
+const LAB_TABS = [
+  { value: "sim", label: "🧪 Simulación", shortLabel: "🧪 Sim" },
+  { value: "torneo", label: "🏆 Torneo", shortLabel: "🏆 Torneo" },
+  { value: "match", label: "🎬 Ver Partida", shortLabel: "🎬 Partida" },
+  { value: "play", label: "🃏 Jugar", shortLabel: "🃏 Jugar" },
+  { value: "custom", label: "🤖 Bots", shortLabel: "🤖 Bots" },
+  { value: "reglas", label: "📜 Reglas", shortLabel: "📜 Reglas" },
+];
+const SIMULATION_OPTIONS = [10, 50, 100, 500, 1000, 5000, 10000, 50000, 100000];
+const QUICK_SIMULATION_OPTIONS = [100, 1000, 10000, 50000];
 
 /* ==============================================================
 CARD ENGINE (UI-only constants)
 ============================================================== */
-const SUIT_ICON = ["⚔️", "🪵", "🏆", "🪙"];
+const SUIT_ICON = ["🗡️", "🪵", "🍷", "🪙"];
 const SUIT_COLOR = ["#60a5fa", "#22c55e", "#f87171", "#fbbf24"];
 const RANK_LABEL = { 0: "🃏", 1: "1", 2: "2", 3: "3", 4: "4", 5: "5", 6: "6", 7: "7", 8: "8", 9: "9", 10: "10", 11: "11", 12: "12" };
+const DRAW_MODE_LABELS = { always_deck: "Solo mazo", smart: "Robo inteligente", aggressive: "Robo agresivo" };
+const DISCARD_MODE_LABELS = { default: "Descarta por valor", high_rank: "Descarta por rango", optimal: "Descarta óptimo" };
+const RULE_FACTS = [
+  "50 cartas",
+  "2 comodines",
+  "7 cartas por jugador",
+  "Corte: 1 suelta",
+  "Resto <= 5",
+  "100 puntos",
+];
+const RULE_SECTIONS = [
+  {
+    key: "mazo",
+    emoji: "🃏",
+    title: "Mazo",
+    accent: "#fbbf24",
+    summary: "El lab juega con la baraja española completa y dos comodines.",
+    items: [
+      "Se usan 50 cartas en total.",
+      "Los 2 comodines siempre entran en el mazo.",
+    ],
+  },
+  {
+    key: "reparto",
+    emoji: "🤝",
+    title: "Reparto inicial",
+    accent: "#22c55e",
+    summary: "La ronda arranca asimétrica, como en chinchón tradicional.",
+    items: [
+      "Cada jugador recibe 7 cartas.",
+      "El que empieza recibe una 8va carta y arranca descartando.",
+    ],
+  },
+  {
+    key: "turno",
+    emoji: "🔄",
+    title: "Turno",
+    accent: "#38bdf8",
+    summary: "Cada turno tiene una decisión de robo y una de descarte.",
+    items: [
+      "Podés robar del mazo o del descarte.",
+      "Después tirás una carta.",
+      "El comodín nunca se puede descartar.",
+    ],
+  },
+  {
+    key: "juegos",
+    emoji: "🧩",
+    title: "Juegos válidos",
+    accent: "#a78bfa",
+    summary: "Solo cuentan combinaciones cerradas de 3 o más cartas.",
+    items: [
+      "Escalera: cartas consecutivas del mismo palo.",
+      "Grupo: cartas del mismo número.",
+      "Cada juego válido necesita al menos 3 cartas.",
+    ],
+  },
+  {
+    key: "corte",
+    emoji: "✂️",
+    title: "Corte",
+    accent: "#f97316",
+    summary: "El corte está restringido para que la ronda no cierre demasiado fácil.",
+    items: [
+      "Podés quedar con como máximo 1 carta suelta.",
+      "El resto de esa suelta no puede superar 5 puntos.",
+      "No podés cortar tirando un comodín.",
+    ],
+  },
+  {
+    key: "comodines",
+    emoji: "🤡",
+    title: "Comodines",
+    accent: "#e879f9",
+    summary: "Son poderosos, pero tienen costo si no lográs cerrarlos.",
+    items: [
+      "Nunca se pueden tirar, ni para descartar ni para cortar.",
+      "Si quedan sueltos fuera de melds, valen 50 puntos en contra.",
+    ],
+  },
+  {
+    key: "chinchon",
+    emoji: "🏆",
+    title: "Chinchón",
+    accent: "#34d399",
+    summary: "Es la condición más fuerte del juego y define muchísimas decisiones del lab.",
+    items: [
+      "Solo vale como chinchón si son 7 cartas consecutivas del mismo palo y sin comodines.",
+      "Si se cumple, la partida se gana instantáneamente.",
+      "Si la corrida usa comodín, vale -10 pero no gana automática.",
+    ],
+  },
+  {
+    key: "puntaje",
+    emoji: "📈",
+    title: "Puntaje y eliminación",
+    accent: "#f87171",
+    summary: "El objetivo final sigue siendo sobrevivir y cerrar mejor que el rival.",
+    items: [
+      "La partida se juega a 100 puntos.",
+      "Al llegar a 100 o más, el jugador queda eliminado.",
+    ],
+  },
+];
+
+function getCutShortLabel(cfg) {
+  if (cfg.cut.pursueChinchon) return "Persigue chinchón";
+  if (cfg.cut.chinchonRunMode) return "Modo corrida";
+  if (cfg.cut.useScoreRules) return "Corte adaptativo";
+  return `Corta <= ${cfg.cut.baseResto}`;
+}
+
+function getBotStrategyPills(cfg) {
+  return [
+    DRAW_MODE_LABELS[cfg.draw.mode] ?? cfg.draw.mode,
+    DISCARD_MODE_LABELS[cfg.discard.mode] ?? cfg.discard.mode,
+    getCutShortLabel(cfg),
+  ];
+}
+
+function getBotPalette(cfg) {
+  const palette = cfg.color
+    ? { color: cfg.color }
+    : CUSTOM_COLORS[cfg.colorIdx % CUSTOM_COLORS.length];
+  return {
+    color: palette.color,
+    soft: `${palette.color}1a`,
+    border: `${palette.color}66`,
+  };
+}
+
+function getBotCardCopy(cfg, showDescMode) {
+  if (showDescMode === "config") return generateDesc(cfg);
+  if (cfg.description?.trim()) return cfg.description.trim();
+  return generateDesc(cfg);
+}
 
 /* -- nearChinchon with configurable threshold (for custom bots) -- */
 function nearChinchonCustom(hand, threshold) {
@@ -305,99 +456,6 @@ function syncBots(customConfigs) { BOT = [...BUILTIN_BOTS, ...customConfigs.map(
 /* ==============================================================
 GAME ENGINE
 ============================================================== */
-const deepH = (h) => h.map(c => ({ ...c }));
-const deepD = (d) => d.map(c => ({ ...c }));
-
-function simulateGamePair(bi0, bi1) {
-const b0 = BOT[bi0], b1 = BOT[bi1];
-const scA = [0, 0], scB = [0, 0];
-let dealer = 0; const statsA = [], statsB = [];
-let aOver = false, bOver = false;
-while (!aOver || !bOver) {
-const fd = shuffle(createDeck());
-const h0 = fd.splice(0, 7), h1 = fd.splice(0, 7), deck = fd;
-const starterA = dealer === 0 ? 1 : 0;
-// Mirror: swap hands AND swap who starts
-const starterB = 1 - starterA;
-
-// Game A: bot0 has h0, bot1 has h1
-if (!aOver) {
-  let rA;
-  if (starterA === 0) { rA = playRoundScored(deepH(h0), deepH(h1), deepD(deck), b0, b1, [scA[0], scA[1]]); }
-  else { const raw = playRoundScored(deepH(h1), deepH(h0), deepD(deck), b1, b0, [scA[1], scA[0]]); rA = { winner: raw.winner === 0 ? 1 : 0, cards: raw.cards, addScores: [raw.addScores[1], raw.addScores[0]], chinchon: raw.chinchon }; }
-  if (rA.chinchon) { aOver = true; statsA.push({ winner: rA.winner, cards: rA.cards, chinchon: true }); scA[rA.winner === 0 ? 1 : 0] = 999; }
-  else { scA[0] += rA.addScores[0]; scA[1] += rA.addScores[1]; statsA.push({ winner: rA.winner, cards: rA.cards, chinchon: false }); if (scA[0] >= 100 || scA[1] >= 100) aOver = true; }
-}
-// Game B (mirror): bot0 has h1, bot1 has h0, starter inverted
-if (!bOver) {
-  let rB;
-  if (starterB === 0) { rB = playRoundScored(deepH(h1), deepH(h0), deepD(deck), b0, b1, [scB[0], scB[1]]); }
-  else { const raw = playRoundScored(deepH(h0), deepH(h1), deepD(deck), b1, b0, [scB[1], scB[0]]); rB = { winner: raw.winner === 0 ? 1 : 0, cards: raw.cards, addScores: [raw.addScores[1], raw.addScores[0]], chinchon: raw.chinchon }; }
-  if (rB.chinchon) { bOver = true; statsB.push({ winner: rB.winner, cards: rB.cards, chinchon: true }); scB[rB.winner === 0 ? 1 : 0] = 999; }
-  else { scB[0] += rB.addScores[0]; scB[1] += rB.addScores[1]; statsB.push({ winner: rB.winner, cards: rB.cards, chinchon: false }); if (scB[0] >= 100 || scB[1] >= 100) bOver = true; }
-}
-dealer = 1 - dealer;
-
-}
-return [
-{ gameLoser: scA[0] >= 100 ? 0 : 1, scores: scA, roundStats: statsA },
-{ gameLoser: scB[0] >= 100 ? 0 : 1, scores: scB, roundStats: statsB },
-];
-}
-
-/* -- Replay -- */
-function playReplay(h0, h1, deckIn, strat0, strat1, scores) {
-const h = [h0, h1], deck = deckIn, st = [strat0, strat1], dr = [0, 0], steps = [], dp = [];
-const sn = () => [h[0].map(c => ({ ...c })), h[1].map(c => ({ ...c }))];
-const ms = () => [findBestMelds(h[0]), findBestMelds(h[1])];
-// Starter (h0) gets 8 cards
-if (deck.length) h[0].push(deck.pop());
-steps.push({ type: "deal", hands: sn(), melds: ms(), drawn: [0, 0] });
-// Starter initial discard (no draw on first turn)
-{ const wi = legalDiscardIndex(h[0], st[0].pickDiscard(h[0]));
-  const disc = h[0].splice(wi, 1)[0]; dp.push(disc);
-  const m7 = findBestMelds(h[0]);
-  steps.push({ type: "initial_discard", player: 0, discarded: { ...disc }, hands: sn(), melds: ms(), freeCards: m7.minFree, drawn: [...dr] });
-  if (st[0].canCut(m7, scores[0], h[0])) {
-    const cs = cutScore(h[0]);
-    steps.push({ type: "cut", player: 0, card: null, kept: false, discarded: { ...disc }, hands: sn(), melds: ms(), freeCards: m7.minFree, drawn: [...dr], chinchon: cs.chinchon, score: cs.score }); return steps;
-  }
-}
-// Player 1 can cut with initial 7 cards
-{ const m7 = findBestMelds(h[1]); if (st[1].canCut(m7, scores[1], h[1])) {
-  const cs = cutScore(h[1]);
-  steps.push({ type: "cut", player: 1, card: null, kept: false, discarded: null, hands: sn(), melds: ms(), freeCards: m7.minFree, drawn: [...dr], chinchon: cs.chinchon, score: cs.score }); return steps; } }
-// Main loop: player 1 goes first
-for (let t = 0; t < 80; t++) {
-const p = 1 - (t % 2); if (!deck.length) break;
-const top = dp.length ? dp[dp.length - 1] : null;
-let card;
-if (top && st[p].drawConfig && shouldDrawDiscard(h[p], top, st[p])) { card = dp.pop(); }
-else { card = deck.pop(); }
-h[p].push(card);
-const wi = legalDiscardIndex(h[p], st[p].pickDiscard(h[p]));
-const disc = h[p][wi]; const kept = !sameCard(disc, card); h[p].splice(wi, 1);
-dp.push(disc);
-if (kept) dr[p]++;
-const m7 = findBestMelds(h[p]);
-if (st[p].canCut(m7, scores[p], h[p])) {
-const cs = cutScore(h[p]);
-steps.push({ type: "cut", player: p, card: { ...card }, kept, discarded: { ...disc }, hands: sn(), melds: ms(), freeCards: m7.minFree, resto: m7.resto, drawn: [...dr], chinchon: cs.chinchon, score: cs.score }); return steps; }
-steps.push({ type: "turn", player: p, card: { ...card }, kept, discarded: { ...disc }, hands: sn(), melds: ms(), freeCards: m7.minFree, resto: m7.resto, drawn: [...dr] });
-}
-const d0 = findBestMelds(h[0]), d1 = findBestMelds(h[1]);
-steps.push({ type: "timeout", winner: d0.minFree <= d1.minFree ? 0 : 1, hands: sn(), melds: ms(), restos: [d0.resto, d1.resto], frees: [d0.minFree, d1.minFree], drawn: [...dr] });
-return steps;
-}
-function generateReplayPair(bi0, bi1) {
-const fd = shuffle(createDeck()); const h0 = fd.splice(0, 7), h1 = fd.splice(0, 7), deck = fd;
-// Round A: bot0 in slot0 with h0 (starts), bot1 in slot1 with h1
-const replayA = playReplay(deepH(h0), deepH(h1), deepD(deck), BOT[bi0], BOT[bi1], [0, 0]);
-// Round B (mirror): swap hands AND who starts → bot1 in slot0 with h0 (starts), bot0 in slot1 with h1
-const replayB = playReplay(deepH(h0), deepH(h1), deepD(deck), BOT[bi1], BOT[bi0], [0, 0]);
-return { replayA, replayB };
-}
-
 /* -- Play mode helpers -- */
 function initRound(scores, dealer) {
 const deck = shuffle(createDeck());
@@ -449,21 +507,76 @@ UI COMPONENTS
 ============================================================== */
 function cardLabel(c) { return isJoker(c) ? "🃏" : `${RANK_LABEL[c.rank]}${SUIT_ICON[c.suit]}`; }
 function CardC({ card, inMeld, highlight, small, onClick, selected, faceDown }) {
-const sz = small ? "w-8 h-12 text-xs" : "w-11 h-16 text-sm";
+const sizeClass = small ? "ch-card--small" : "";
+const cardClasses = [
+  "ch-card",
+  sizeClass,
+  onClick ? "ch-card--interactive" : "",
+  selected ? "ch-card--selected" : "",
+].filter(Boolean).join(" ");
 if (faceDown) return (
-<div className={`${sz} bg-indigo-900 border border-indigo-700 rounded flex items-center justify-center shrink-0`}><span className="text-indigo-500 text-lg">?</span></div>
+<div className={`${cardClasses} ch-card--back`.trim()} onClick={onClick} aria-label="Carta boca abajo">
+  <div className="ch-card__back-pattern" aria-hidden="true" />
+  <div className="ch-card__back-center" aria-hidden="true">
+    <span className="ch-card__back-glyph">✦</span>
+    <span className="ch-card__back-mark">CL</span>
+    <span className="ch-card__back-glyph">✦</span>
+  </div>
+</div>
 );
 const j = isJoker(card);
-const bg = selected ? "bg-blue-800 border-blue-400 ring-2 ring-blue-400"
-: highlight === "drawn" ? "bg-yellow-900/80 border-yellow-500 ring-1 ring-yellow-500/40"
-: highlight === "discarded" ? "bg-red-900/60 border-red-500 opacity-50"
-: j ? (inMeld ? "bg-purple-900 border-purple-400" : "bg-purple-950 border-purple-700")
-: inMeld ? "bg-gray-800 border-gray-500" : "bg-gray-900 border-gray-700";
 const color = j ? "#e879f9" : SUIT_COLOR[card.suit];
+const accentClasses = [
+  cardClasses,
+  highlight === "drawn" ? "ch-card--drawn" : "",
+  highlight === "discarded" ? "ch-card--discarded" : "",
+  j ? "ch-card--joker" : "",
+  !j && inMeld ? "ch-card--meld" : "",
+].filter(Boolean).join(" ");
+const rank = j ? "J" : RANK_LABEL[card.rank];
+const suit = j ? "★" : SUIT_ICON[card.suit];
+const centerIcon = j ? "🤡" : suit;
+const label = cardLabel(card);
+const topBladeClass = !j && card.suit === 0 ? " ch-card__icon--blade" : "";
+const bottomBladeClass = !j && card.suit === 0 ? " ch-card__icon--blade-bottom" : "";
+const cardStyle = j ? { "--card-accent": color } : {
+  "--card-accent": color,
+  "--card-tint": `${color}20`,
+  "--card-border": `${color}4f`,
+  "--card-inner-border": `${color}24`,
+};
 return (
-<div className={`${sz} ${bg} border rounded flex flex-col items-center justify-center font-mono leading-tight shrink-0 ${onClick ? "cursor-pointer active:scale-95" : ""}`}
-style={{ color }} onClick={onClick}>
-{j ? <span className="text-lg leading-none">🃏</span> : <><span className="font-bold">{RANK_LABEL[card.rank]}</span><span className="text-xs leading-none">{SUIT_ICON[card.suit]}</span></>}
+<div
+className={accentClasses}
+style={cardStyle}
+onClick={onClick}
+title={label}
+aria-label={label}
+>
+<span className="ch-card__corner">
+  <span className="ch-card__rank">{rank}</span>
+  <span className={`ch-card__suit${topBladeClass}`}>{suit}</span>
+</span>
+<span className={`ch-card__center${topBladeClass}`} aria-hidden="true">{centerIcon}</span>
+<span className="ch-card__corner ch-card__corner--bottom" aria-hidden="true">
+  <span className="ch-card__rank">{rank}</span>
+  <span className={`ch-card__suit${bottomBladeClass}`}>{suit}</span>
+</span>
+</div>
+);
+}
+
+function CardPlaceholder({ small, active, label = "∅" }) {
+const sizeClass = small ? "ch-card--small" : "";
+const classes = [
+  "ch-card",
+  sizeClass,
+  "ch-card--empty",
+  active ? "ch-card--selected" : "",
+].filter(Boolean).join(" ");
+return (
+<div className={classes} aria-label="Pila vacía">
+  <span className="ch-card__empty-mark" aria-hidden="true">{label}</span>
 </div>
 );
 }
@@ -489,22 +602,162 @@ highlight={isDraw ? "drawn" : null} onClick={onClick ? () => onClick(i) : null} 
 );
 }
 
-function BotPicker({ label, value, onChange, exclude }) {
+function BotLineupPicker({ title, subtitle, labels, values, onChange, disabled }) {
+const [activeSlot, setActiveSlot] = useState(0);
+
+useEffect(() => {
+if (activeSlot >= labels.length) setActiveSlot(0);
+}, [activeSlot, labels.length]);
+
+const assignBot = (botIdx) => {
+if (disabled) return;
+const existingSlot = values.indexOf(botIdx);
+if (existingSlot >= 0) {
+setActiveSlot(existingSlot);
+return;
+}
+const next = [...values];
+next[activeSlot] = botIdx;
+onChange(next);
+setActiveSlot((activeSlot + 1) % labels.length);
+};
+
 return (
-<div className="flex flex-col items-center gap-1">
-<span className="text-xs text-gray-500">{label}</span>
-<div className="flex flex-wrap gap-1.5 justify-center">
-{BOT.map((b, i) => {
-const dis = exclude !== undefined && exclude === i;
-return (
-<button key={i} disabled={dis} onClick={() => onChange(i)}
-className={`px-2.5 py-1.5 rounded-md text-xs font-medium border transition-all ${value === i ? "border-2 scale-105" : `border-gray-700 ${dis ? "opacity-20" : "hover:border-gray-500"}`}`}
-style={value === i ? { borderColor: b.color, color: b.color, background: `${b.color}15` } : { color: dis ? "#333" : b.color }}>
-{b.emoji} {b.name}
-</button>
-);
-})}
+<div className="lab-control-card">
+  <div className="lab-control-card__header">
+    <div>
+      <div className="lab-control-card__eyebrow">Participantes</div>
+      <h3>{title}</h3>
+    </div>
+    <p>{subtitle}</p>
+  </div>
+  <div className={`lab-slot-grid${labels.length > 2 ? " is-wide" : " is-duel"}`}>
+    {labels.map((slotLabel, slotIdx) => {
+      const bot = BOT[values[slotIdx]];
+      const isActive = activeSlot === slotIdx;
+      return (
+        <button
+          key={slotLabel}
+          type="button"
+          disabled={disabled}
+          aria-pressed={isActive}
+          className={`lab-slot-card${isActive ? " is-active" : ""}${labels.length === 2 ? " is-duel" : ""}`}
+          style={{ borderColor: isActive ? `${bot.color}80` : undefined }}
+          onClick={() => setActiveSlot(slotIdx)}
+        >
+          <span className="lab-slot-card__label">{slotLabel}</span>
+          <span className="lab-slot-card__name" style={{ color: bot.color }}>{bot.emoji} {bot.name}</span>
+          <span className="lab-slot-card__desc">{bot.desc}</span>
+        </button>
+      );
+    })}
+  </div>
+  <div className="lab-pill-cloud" role="group" aria-label={title}>
+    {BOT.map((bot, idx) => {
+      const selectedSlot = values.indexOf(idx);
+      const isSelected = selectedSlot >= 0;
+      return (
+        <button
+          key={bot.id ?? idx}
+          type="button"
+          disabled={disabled}
+          aria-pressed={isSelected}
+          className={`lab-bot-pill${isSelected ? " is-selected" : ""}`}
+          style={{
+            borderColor: isSelected ? `${bot.color}aa` : undefined,
+            color: isSelected ? bot.color : undefined,
+            background: isSelected ? `${bot.color}1a` : undefined,
+          }}
+          onClick={() => assignBot(idx)}
+        >
+          <span>{bot.emoji} {bot.name}</span>
+          {isSelected && <span className="lab-bot-pill__badge">{selectedSlot + 1}</span>}
+        </button>
+      );
+    })}
+  </div>
 </div>
+);
+}
+
+function SimulationCountPicker({
+label,
+value,
+onChange,
+disabled,
+tone = "emerald",
+useStabilized,
+onUseStabilizedChange,
+stabilizeDecimals,
+onStabilizeDecimalsChange,
+stabilizedCopy,
+}) {
+return (
+<div className="lab-control-card">
+  <div className="lab-control-card__header">
+    <div>
+      <div className="lab-control-card__eyebrow">Cantidad</div>
+      <h3>{label}</h3>
+    </div>
+    <p>Presets rápidos arriba y selector completo abajo.</p>
+  </div>
+  <div className="lab-choice-grid" role="group" aria-label={label}>
+    {QUICK_SIMULATION_OPTIONS.map((option) => {
+      const active = value === option;
+      return (
+        <button
+          key={option}
+          type="button"
+          disabled={disabled}
+          aria-pressed={active}
+          onClick={() => onChange(option)}
+          className={`lab-choice-btn ${tone}${active ? " is-active" : ""}`}
+        >
+          {option >= 1000 ? `${option / 1000}k` : option}
+        </button>
+      );
+    })}
+  </div>
+  <label className="lab-inline-field">
+    <span>Otra escala</span>
+    <select value={value} onChange={(e) => onChange(Number(e.target.value))} disabled={disabled}>
+      {SIMULATION_OPTIONS.map((option) => (
+        <option key={option} value={option}>
+          {option.toLocaleString("es-AR")} simulaciones
+        </option>
+      ))}
+    </select>
+  </label>
+  <div className="lab-toggle-card">
+    <label className="lab-toggle-card__row">
+      <span>
+        <strong>Frenar antes si el winrate ya no cambia</strong>
+        <small>{stabilizedCopy}</small>
+      </span>
+      <input
+        type="checkbox"
+        checked={useStabilized}
+        onChange={(e) => onUseStabilizedChange(e.target.checked)}
+        disabled={disabled}
+      />
+    </label>
+    {useStabilized && (
+      <label className="lab-inline-field lab-inline-field--stacked">
+        <span>Precisión a comparar</span>
+        <select
+          value={stabilizeDecimals}
+          onChange={(e) => onStabilizeDecimalsChange(Number(e.target.value))}
+          disabled={disabled}
+        >
+          {[0, 1, 2, 3].map((digits) => (
+            <option key={digits} value={digits}>
+              {digits} {digits === 1 ? "decimal" : "decimales"}
+            </option>
+          ))}
+        </select>
+      </label>
+    )}
+  </div>
 </div>
 );
 }
@@ -816,39 +1069,81 @@ return a.suit - b.suit;
 });
 }
 
-/* -- Bot Editor sub-component -- */
-function BotEditor({ config, onSave, onCancel }) {
-const [cfg, setCfg] = useState(() => JSON.parse(JSON.stringify(config)));
-const upd = (path, val) => {
-const next = JSON.parse(JSON.stringify(cfg));
+function cloneEditorConfig(config) {
+if (typeof structuredClone === "function") return structuredClone(config);
+return JSON.parse(JSON.stringify(config));
+}
+
+function updateEditorConfig(config, path, value) {
+const next = cloneEditorConfig(config);
 const keys = path.split(".");
 let obj = next;
 for (let i = 0; i < keys.length - 1; i++) obj = obj[keys[i]];
-obj[keys[keys.length - 1]] = val;
-setCfg(next);
-};
-const updRule = (idx, val) => {
-const next = JSON.parse(JSON.stringify(cfg));
-next.cut.scoreRules[idx].maxResto = val;
-setCfg(next);
-};
+obj[keys[keys.length - 1]] = value;
+return next;
+}
+
+function botEditorReducer(state, action) {
+switch (action.type) {
+case "set":
+  return updateEditorConfig(state, action.path, action.value);
+case "setRule": {
+  const next = cloneEditorConfig(state);
+  next.cut.scoreRules[action.idx].maxResto = action.value;
+  return next;
+}
+case "reset":
+  return cloneEditorConfig(action.config);
+default:
+  return state;
+}
+}
+
+/* -- Bot Editor sub-component -- */
+function BotEditor({ config, onSave, onCancel }) {
+const [cfg, dispatch] = useReducer(botEditorReducer, config, cloneEditorConfig);
+const upd = (path, val) => dispatch({ type: "set", path, value: val });
+const updRule = (idx, val) => dispatch({ type: "setRule", idx, value: val });
 const c = CUSTOM_COLORS[cfg.colorIdx % CUSTOM_COLORS.length];
+const strategyPills = getBotStrategyPills(cfg);
+
+useEffect(() => {
+dispatch({ type: "reset", config });
+}, [config]);
 
 return (
-<div className="w-full max-w-lg bg-gray-900 border border-gray-800 rounded-xl p-4">
-<h3 className="text-sm font-bold text-gray-200 mb-3">{config.id ? "Editar Bot" : "Nuevo Bot"}</h3>
+<div
+  className="lab-bot-sheet"
+  style={{ "--bot-accent": c.color, "--bot-accent-soft": `${c.color}14`, "--bot-accent-border": `${c.color}55` }}
+>
+<div className="lab-bot-sheet__hero">
+  <div className="lab-bot-sheet__eyebrow">{config.id ? "Editor de bot" : "Nuevo bot"}</div>
+  <div className="lab-bot-sheet__head">
+    <span className="lab-bot-sheet__avatar" aria-hidden="true">{cfg.emoji}</span>
+    <div className="lab-bot-sheet__intro">
+      <h3>{cfg.name || "Sin nombre"}</h3>
+      <p>{cfg.description?.trim() || "Definí identidad, robo, descarte y corte para darle un estilo propio a tu bot."}</p>
+    </div>
+  </div>
+  <div className="lab-bot-sheet__pills">
+    {strategyPills.map((pill) => (
+      <span key={pill} className="lab-bot-sheet__pill">{pill}</span>
+    ))}
+  </div>
+</div>
 
 {/* Name + Emoji + Color */}
+<LabAccordionSection title="Identidad" subtitle="Nombre, descripcion, emoji y color" defaultOpen>
 <div className="mb-4">
 <label className="text-xs text-gray-500 block mb-1">Nombre</label>
 <input type="text" value={cfg.name} maxLength={12} onChange={e => upd("name", e.target.value)}
-className="bg-gray-800 border border-gray-700 rounded px-3 py-1.5 text-sm text-gray-200 w-full focus:border-gray-500 focus:outline-none" />
+className="bg-gray-800 border border-gray-700 rounded px-3 py-1.5 text-sm text-gray-200 w-full focus:border-gray-500" />
 </div>
 <div className="mb-4">
 <label className="text-xs text-gray-500 block mb-1">Descripción <span className="text-gray-600">(opcional)</span></label>
 <textarea value={cfg.description ?? ""} maxLength={120} rows={2} onChange={e => upd("description", e.target.value)}
 placeholder="Describí la estrategia de tu bot en pocas palabras..."
-className="bg-gray-800 border border-gray-700 rounded px-3 py-1.5 text-sm text-gray-200 w-full focus:border-gray-500 focus:outline-none resize-none" />
+className="bg-gray-800 border border-gray-700 rounded px-3 py-1.5 text-sm text-gray-200 w-full focus:border-gray-500 resize-none" />
 <div className="text-xs text-gray-600 text-right mt-0.5">{(cfg.description ?? "").length}/120</div>
 </div>
 <div className="mb-4">
@@ -873,8 +1168,10 @@ style={{ background: cc.color, borderColor: cfg.colorIdx === i ? "#fff" : cc.col
 ))}
 </div>
 </div>
+</LabAccordionSection>
 
 {/* Draw */}
+<LabAccordionSection title="Robo" subtitle="Como elige entre mazo y descarte" defaultOpen>
 <div className="mb-4 bg-gray-800 border border-gray-700 rounded-lg p-3">
 <div className="text-xs font-bold mb-1" style={{ color: c.color }}>🃏 Estrategia de robo</div>
 <p className="text-xs text-gray-500 mb-2 leading-snug">¿Cuándo toma cartas del pozo de descarte en lugar del mazo?</p>
@@ -906,8 +1203,10 @@ className="flex-1 accent-amber-500" />
 </div>
 )}
 </div>
+</LabAccordionSection>
 
 {/* Discard */}
+<LabAccordionSection title="Descarte" subtitle="Que carta deja ir en cada turno" defaultOpen={false}>
 <div className="mb-4 bg-gray-800 border border-gray-700 rounded-lg p-3">
 <div className="text-xs font-bold mb-1" style={{ color: c.color }}>🗑️ Estrategia de descarte</div>
 <p className="text-xs text-gray-500 mb-2 leading-snug">¿Qué carta elimina de su mano en cada turno?</p>
@@ -928,8 +1227,10 @@ className="accent-amber-500 mt-0.5 shrink-0" />
 ))}
 </div>
 </div>
+</LabAccordionSection>
 
 {/* Cut */}
+<LabAccordionSection title="Corte" subtitle="Cuando decide cerrar la ronda" defaultOpen={false}>
 <div className="mb-4 bg-gray-800 border border-gray-700 rounded-lg p-3">
 <div className="text-xs font-bold mb-1" style={{ color: c.color }}>✂️ Condición de corte</div>
 <p className="text-xs text-gray-500 mb-3 leading-snug">¿Cuándo decide que su mano es suficientemente buena para cortar la ronda?</p>
@@ -1022,25 +1323,22 @@ className="accent-amber-500 mt-0.5 shrink-0" />
 </label>
 </div>
 </div>
-
-{/* Preview */}
-<div className="mb-4 bg-gray-950 border border-gray-800 rounded-lg p-3">
-<div className="text-xs text-gray-500 mb-1">Vista previa</div>
-<div className="flex items-center gap-2">
-<span className="text-lg">{cfg.emoji}</span>
-<span className="font-bold text-sm" style={{ color: c.color }}>{cfg.name || "Sin nombre"}</span>
-</div>
-<div className="text-xs text-gray-400 mt-1">{generateDesc(cfg)}</div>
-</div>
+</LabAccordionSection>
 
 {/* Actions */}
-<div className="flex gap-2 justify-end">
-<button onClick={onCancel} className="px-4 py-1.5 rounded-md text-sm text-gray-400 hover:text-gray-200 border border-gray-700 hover:border-gray-500 transition-colors">Cancelar</button>
+<div className="lab-bot-sheet__footer">
+<div className="lab-bot-sheet__summary">
+  <span className="lab-bot-sheet__summary-label">Resumen actual</span>
+  <p>{generateDesc(cfg)}</p>
+</div>
+<div className="lab-bot-sheet__actions">
+<button onClick={onCancel} className="lab-bot-sheet__button">Cancelar</button>
 <button onClick={() => { if (!cfg.name.trim()) return; onSave(cfg); }}
-className="px-4 py-1.5 rounded-md text-sm font-semibold text-white transition-colors"
-style={{ background: c.color }}>
+className="lab-bot-sheet__button is-primary"
+style={{ background: c.color, borderColor: c.color }}>
 Guardar
 </button>
+</div>
 </div>
 </div>
 );
@@ -1049,35 +1347,50 @@ Guardar
 /* -- BotViewer: read-only config display -- */
 function BotViewer({ config, onClose }) {
 const cfg = config;
-const color = cfg.color ?? CUSTOM_COLORS[cfg.colorIdx % CUSTOM_COLORS.length].color;
-const bg = cfg.bg ?? CUSTOM_COLORS[cfg.colorIdx % CUSTOM_COLORS.length].bg;
-const border = cfg.border ?? CUSTOM_COLORS[cfg.colorIdx % CUSTOM_COLORS.length].border;
+const { color, soft, border } = getBotPalette(cfg);
 const drawLabels = { always_deck: "Solo del mazo", smart: "Inteligente (umbral)", aggressive: "Agresivo" };
 const discardLabels = { default: "Por valor", high_rank: "Por rango numérico", optimal: "Óptimo" };
+const strategyPills = getBotStrategyPills(cfg);
+const isPreset = Boolean(cfg.color);
 
 return (
-<div className="w-full max-w-lg bg-gray-900 border border-gray-800 rounded-xl p-4">
-<div className="flex items-center gap-2 mb-3">
-<span className="text-2xl">{cfg.emoji}</span>
-<span className="font-bold text-lg" style={{ color }}>{cfg.name}</span>
-<span className="text-xs text-gray-600 ml-auto">Solo lectura</span>
+<div
+  className="lab-bot-sheet"
+  style={{ "--bot-accent": color, "--bot-accent-soft": soft, "--bot-accent-border": border }}
+>
+<div className="lab-bot-sheet__hero">
+  <div className="lab-bot-sheet__eyebrow">{isPreset ? "Preset del lab" : "Bot custom"}</div>
+  <div className="lab-bot-sheet__head">
+    <span className="lab-bot-sheet__avatar" aria-hidden="true">{cfg.emoji}</span>
+    <div className="lab-bot-sheet__intro">
+      <h3>{cfg.name}</h3>
+      <p>{isPreset ? "Preset estable del lab para comparar estilos de robo, descarte y corte." : "Revisá la estrategia completa antes de editarla, exportarla o medirla contra los bots base."}</p>
+    </div>
+    <span className="lab-bot-sheet__status">Solo lectura</span>
+  </div>
+  <div className="lab-bot-sheet__pills">
+    {strategyPills.map((pill) => (
+      <span key={pill} className="lab-bot-sheet__pill">{pill}</span>
+    ))}
+  </div>
 </div>
 
 {cfg.description && (
-<div className={`mb-4 ${bg} border ${border} rounded-lg p-3`}>
+<div className="lab-bot-viewer__lead">
 <p className="text-sm text-gray-200 leading-snug">{cfg.description}</p>
 </div>
 )}
 
-<div className="mb-3 bg-gray-800 border border-gray-700 rounded-lg p-3">
+<div className="lab-bot-viewer__grid">
+<article className="lab-bot-viewer__card">
 <div className="text-xs font-bold mb-2" style={{ color }}>🃏 Robo</div>
 <div className="text-sm text-gray-200 font-medium">{drawLabels[cfg.draw.mode] ?? cfg.draw.mode}</div>
 {cfg.draw.mode === "smart" && <p className="text-xs text-gray-500 mt-0.5">Umbral de resto: {cfg.draw.restoThreshold} pts</p>}
 {cfg.draw.mode === "aggressive" && <p className="text-xs text-gray-500 mt-0.5">Toma del descarte ante cualquier mejora de resto.</p>}
 {cfg.draw.mode === "always_deck" && <p className="text-xs text-gray-500 mt-0.5">Nunca toma del descarte.</p>}
-</div>
+</article>
 
-<div className="mb-3 bg-gray-800 border border-gray-700 rounded-lg p-3">
+<article className="lab-bot-viewer__card">
 <div className="text-xs font-bold mb-2" style={{ color }}>🗑️ Descarte</div>
 <div className="text-sm text-gray-200 font-medium">{discardLabels[cfg.discard.mode] ?? cfg.discard.mode}</div>
 <p className="text-xs text-gray-500 mt-0.5">
@@ -1085,9 +1398,9 @@ return (
 {cfg.discard.mode === "high_rank" && "Descarta la carta con número más alto, sin importar melds parciales."}
 {cfg.discard.mode === "optimal" && "Evalúa las 8 posibles cartas y elige la que deja la mejor mano."}
 </p>
-</div>
+</article>
 
-<div className="mb-4 bg-gray-800 border border-gray-700 rounded-lg p-3">
+<article className="lab-bot-viewer__card is-wide">
 <div className="text-xs font-bold mb-2" style={{ color }}>✂️ Corte</div>
 <div className="flex flex-col gap-1.5 text-sm">
 <div className="text-gray-300">Cartas sueltas máx: <span className="text-gray-100 font-medium">{cfg.cut.maxFree}</span></div>
@@ -1108,26 +1421,49 @@ return (
 {cfg.cut.chinchonRunMode && <div className="text-gray-300">🏃 <span className="text-gray-100">Modo corrida</span> — con 4+ cartas del mismo palo consecutivas, espera el chinchón.</div>}
 {cfg.cut.pursueChinchon && <div className="text-gray-300">🎯 <span className="text-gray-100">Persigue chinchón</span> — umbral de {cfg.cut.chinchonThreshold ?? 6} cartas en posición.</div>}
 </div>
+</article>
 </div>
 
-<div className="text-xs text-gray-600 mb-4 leading-snug"><span className="font-medium text-gray-500">Resumen: </span>{generateDesc(cfg)}</div>
+<div className="lab-bot-sheet__footer">
+<div className="lab-bot-sheet__summary">
+  <span className="lab-bot-sheet__summary-label">Resumen</span>
+  <p>{generateDesc(cfg)}</p>
+</div>
 
-<div className="flex justify-end">
-<button onClick={onClose} className="px-4 py-1.5 rounded-md text-sm text-gray-400 hover:text-gray-200 border border-gray-700 hover:border-gray-500 transition-colors">Cerrar</button>
+<div className="lab-bot-sheet__actions">
+<button onClick={onClose} className="lab-bot-sheet__button">Cerrar</button>
+</div>
 </div>
 </div>
 );
 }
 
 /* -- Play sub-component -- */
-function PlayGame({ g, bot, history, showBot, bML, pML, topD, canPlayerCut, setShowBot, playerDraw, selectCard, nextRound, resetGame, sortHand, toggleCutMode }) {
+function PlayGame({ g, bot, history, showBot, bML, pML, topD, canPlayerCut, setShowBot, playerDraw, selectCard, nextRound, resetGame, sortHand, toggleCutMode, reorderHand }) {
 const [spyModal, setSpyModal] = useState(false);
+const [arrangeMode, setArrangeMode] = useState(false);
 const dragSrcRef = useRef(null);
 const dragOccurred = useRef(false);
+const canArrangeHand = g.turn === 0 && (g.phase === "playerDraw" || g.phase === "playerDiscard");
+
+useEffect(() => {
+if (!canArrangeHand && arrangeMode) setArrangeMode(false);
+if (!canArrangeHand || !arrangeMode) {
+  dragSrcRef.current = null;
+  dragOccurred.current = false;
+}
+}, [arrangeMode, canArrangeHand]);
 
 const handleSpy = () => {
 if (showBot) { setShowBot(false); return; }
 setSpyModal(true);
+};
+const toggleArrangeMode = () => {
+  if (!canArrangeHand) return;
+  if (!arrangeMode && g.cutMode) toggleCutMode();
+  dragSrcRef.current = null;
+  dragOccurred.current = false;
+  setArrangeMode(v => !v);
 };
 
 return (
@@ -1197,7 +1533,7 @@ className="bg-gray-700 hover:bg-gray-600 text-white px-4 py-2 rounded-lg text-sm
     <div>
       <HandRow hand={g.bHand} meldsData={showBot ? bML : null} label={bot.name + (g.phase === "botTurn" ? " (pensando...)" : "")} color={bot.text} bgClass={bot.bg} borderClass={bot.border} faceDown={!showBot} />
       <div className="flex justify-end mt-1 mb-2">
-        <button onClick={handleSpy} className="text-xs text-gray-600 hover:text-gray-400">{showBot ? "Ocultar cartas" : "Espiar 👀"}</button>
+        <button onClick={handleSpy} className={`lab-secondary-button ${showBot ? "is-active" : ""}`}>{showBot ? "🙈 Ocultar cartas" : "👀 Espiar cartas"}</button>
       </div>
       {g.botLastAction && (
         <div className="text-xs text-center text-gray-500 mb-2 bg-gray-900/60 border border-gray-800 rounded px-2 py-1.5">
@@ -1207,19 +1543,24 @@ className="bg-gray-700 hover:bg-gray-600 text-white px-4 py-2 rounded-lg text-sm
         </div>
       )}
       <div className="flex items-center justify-center gap-4 mb-3">
-        <div className={`flex flex-col items-center ${g.phase === "playerDraw" && g.turn === 0 ? "cursor-pointer" : ""}`} onClick={() => g.phase === "playerDraw" && g.turn === 0 && playerDraw("deck")}>
-          <div className={`w-11 h-16 bg-indigo-900 border-2 ${g.phase === "playerDraw" && g.turn === 0 ? "border-indigo-400 ring-2 ring-indigo-400/30" : "border-indigo-700"} rounded flex items-center justify-center`}>
-            <span className="text-indigo-400 font-bold text-sm">{g.deck.length}</span>
+        <div className="flex flex-col items-center">
+          <div className="ch-card-stack">
+            <CardC
+              faceDown
+              onClick={g.phase === "playerDraw" && g.turn === 0 ? () => playerDraw("deck") : undefined}
+              selected={g.phase === "playerDraw" && g.turn === 0}
+            />
+            <span className="ch-card-stack__count">{g.deck.length}</span>
           </div><span className="text-xs text-gray-500 mt-0.5">Mazo</span>
         </div>
         <div className={`flex flex-col items-center ${g.phase === "playerDraw" && g.turn === 0 && topD ? "cursor-pointer" : ""}`} onClick={() => g.phase === "playerDraw" && g.turn === 0 && topD && playerDraw("discard")}>
-          {topD ? <div className={g.phase === "playerDraw" && g.turn === 0 ? "ring-2 ring-amber-400/30 rounded" : ""}><CardC card={topD} /></div>
-            : <div className="w-11 h-16 border-2 border-dashed border-gray-700 rounded flex items-center justify-center"><span className="text-gray-700 text-xs">∅</span></div>}
+          {topD ? <CardC card={topD} selected={g.phase === "playerDraw" && g.turn === 0} />
+            : <CardPlaceholder active={g.phase === "playerDraw" && g.turn === 0} />}
           <span className="text-xs text-gray-500 mt-0.5">Descarte</span>
         </div>
       </div>
       {g.phase === "playerDraw" && g.turn === 0 && <div className="text-center text-sm text-sky-400 mb-2">Agarrá del mazo o del descarte</div>}
-      {g.phase === "playerDiscard" && <div className="text-center text-sm text-sky-400 mb-2">{g.pHand.length === 8 ? "Inicio: tenés 8 cartas, tocá una para descartarla" : g.cutMode ? "¿Qué carta tirás para cortar?" : "Tocá una carta para descartarla"}</div>}
+      {g.phase === "playerDiscard" && <div className="text-center text-sm text-sky-400 mb-2">{arrangeMode ? "Modo acomodar activo: el descarte queda en pausa" : g.pHand.length === 8 ? "Inicio de ronda: tenés 8 cartas, tocá una para descartar" : g.cutMode ? "Elegí qué carta tirás para cortar" : "Tocá una carta para descartar"}</div>}
       {g.phase === "botTurn" && <div className="text-center text-sm text-gray-500 mb-2">{bot.name} está jugando...</div>}
       {g.message && <div className="text-center text-xs text-red-400 mb-2">{g.message}</div>}
 
@@ -1228,23 +1569,29 @@ className="bg-gray-700 hover:bg-gray-600 text-white px-4 py-2 rounded-lg text-sm
           <span className="font-bold text-sm text-sky-400">Tu mano</span>
           {pML && <span className="text-xs text-gray-500">Sueltas: {pML.minFree} · Resto: {pML.resto}</span>}
         </div>
+        {canArrangeHand && arrangeMode && (
+          <div className="lab-copy-note mb-2">
+            Modo reordenar activo: arrastrá las cartas para acomodar tu mano.
+          </div>
+        )}
         <div className="flex flex-wrap gap-1">
           {g.pHand.map((c, i) => {
             const meldSet = new Set((pML?.meldsCut || pML?.melds || []).flat());
             const inMeld = meldSet.has(i);
             const isDraw = g.drawnCard && sameCard(c, g.drawnCard);
-            const canDrag = g.phase === "playerDiscard";
+            const canDrag = canArrangeHand && arrangeMode;
+            const canDiscardCard = g.phase === "playerDiscard" && !arrangeMode;
             return (
               <div
                 key={`${c.rank}-${c.suit}-${i}`}
                 draggable={canDrag}
+                onClick={canDiscardCard ? () => selectCard(i) : undefined}
                 onDragStart={(e) => { dragSrcRef.current = i; dragOccurred.current = false; e.dataTransfer.effectAllowed = "move"; }}
                 onDragOver={(e) => { e.preventDefault(); e.dataTransfer.dropEffect = "move"; }}
-                onDrop={(e) => { e.preventDefault(); if (dragSrcRef.current === null || dragSrcRef.current === i) return; dragOccurred.current = true; const newHand = [...g.pHand]; const [moved] = newHand.splice(dragSrcRef.current, 1); newHand.splice(i, 0, moved); dragSrcRef.current = null; setG({ ...g, pHand: newHand, selectedIdx: null }); }}
+                onDrop={(e) => { e.preventDefault(); if (dragSrcRef.current === null || dragSrcRef.current === i) return; dragOccurred.current = true; reorderHand(dragSrcRef.current, i); dragSrcRef.current = null; }}
                 onDragEnd={() => { setTimeout(() => { dragOccurred.current = false; }, 50); dragSrcRef.current = null; }}
               >
                 <CardC card={c} inMeld={inMeld} highlight={isDraw ? "drawn" : null}
-                  onClick={g.phase === "playerDiscard" ? () => { if (!dragOccurred.current) selectCard(i); } : null}
                   faceDown={false} />
               </div>
             );
@@ -1254,11 +1601,19 @@ className="bg-gray-700 hover:bg-gray-600 text-white px-4 py-2 rounded-lg text-sm
 
       {/* Sort + cut button */}
       <div className="flex items-center justify-between mt-2">
-        <div className="flex gap-1">
-          <button onClick={() => sortHand("suit")} className="text-xs text-gray-500 hover:text-gray-300 bg-gray-800 px-2 py-1 rounded">Por palo</button>
-          <button onClick={() => sortHand("rank")} className="text-xs text-gray-500 hover:text-gray-300 bg-gray-800 px-2 py-1 rounded">Por número</button>
+        <div className="lab-secondary-row">
+          <button onClick={() => sortHand("suit")} className="lab-secondary-button is-quiet">Por palo</button>
+          <button onClick={() => sortHand("rank")} className="lab-secondary-button is-quiet">Por número</button>
+          {canArrangeHand && (
+            <button
+              onClick={toggleArrangeMode}
+              className={`lab-secondary-button ${arrangeMode ? "is-active" : "is-quiet"}`}
+            >
+              {arrangeMode ? "Listo para jugar" : "Reordenar mano"}
+            </button>
+          )}
         </div>
-        {g.phase === "playerDiscard" && canPlayerCut && (
+        {g.phase === "playerDiscard" && canPlayerCut && !arrangeMode && (
           <button onClick={toggleCutMode} className={`px-4 py-1.5 rounded-lg font-bold text-sm transition-all active:scale-95 ${g.cutMode ? "bg-yellow-400 text-black ring-2 ring-yellow-300" : "bg-yellow-700 hover:bg-yellow-600 text-white animate-pulse"}`}>
             {g.cutMode ? "✂️ Tocá qué carta tirás" : "✂️ ¡Cortar!"}
           </button>
@@ -1281,7 +1636,7 @@ className="bg-gray-700 hover:bg-gray-600 text-white px-4 py-2 rounded-lg text-sm
       </div>
     </div>
   )}
-  {g.phase !== "gameOver" && <div className="flex justify-center mt-3"><button onClick={resetGame} className="text-xs text-gray-600 hover:text-gray-400">Abandonar</button></div>}
+  {g.phase !== "gameOver" && <div className="flex justify-center mt-3"><button onClick={resetGame} className="lab-secondary-button is-danger">🛑 Abandonar partida</button></div>}
 </div>
 
 );
@@ -1304,25 +1659,71 @@ const [copiedId, setCopiedId] = useState<string | null>(null);
 const [showImport, setShowImport] = useState(false);
 const [importText, setImportText] = useState("");
 const [importError, setImportError] = useState<string | null>(null);
+const workerRef = useRef<Worker | null>(null);
+const activeJobIdRef = useRef(0);
+
+const nextWorkerJobId = useCallback(() => {
+  activeJobIdRef.current += 1;
+  return activeJobIdRef.current;
+}, []);
+
+const cancelActiveWorkerJob = useCallback(() => {
+  if (activeJobIdRef.current <= 0) return;
+  workerRef.current?.postMessage({ type: "cancel", jobId: activeJobIdRef.current });
+  activeJobIdRef.current += 1;
+}, []);
+
 useEffect(() => { saveCustomConfigs(customConfigs); syncBots(customConfigs); }, [customConfigs]);
 // Initial sync on mount
 useEffect(() => { syncBots(customConfigs); }, []);
+useEffect(() => {
+  const worker = new ChinchonLabWorker();
+  workerRef.current = worker;
 
-const runBenchmark = useCallback((cfg) => {
-  const botIdx = BOT.findIndex(b => b.id === cfg.id);
-  if (botIdx < 0) return;
-  setBenchmarking(cfg.id);
-  setTimeout(() => {
-    let wins = 0, total = 0;
-    for (let i = 0; i < 25; i++) {
-      const [gA, gB] = simulateGamePair(botIdx, 0);
-      if (gA.gameLoser === 1) wins++;
-      if (gB.gameLoser === 1) wins++;
-      total += 2;
-    }
-    setBenchmarks(prev => ({ ...prev, [cfg.id]: { wins, total } }));
-    setBenchmarking(null);
-  }, 0);
+  worker.onmessage = (event) => {
+    const data = event.data;
+    if (data.jobId !== activeJobIdRef.current) return;
+
+    startTransition(() => {
+      if (data.type === "simProgress") {
+        stopRef.current = data.progress >= 100;
+        setProg(data.progress);
+        setChartData(data.chartData);
+        setRoundWins(data.roundWins);
+        setGameWins(data.gameWins);
+        setSweepWins(data.sweepWins);
+        setTotalRounds(data.totalRounds);
+        setWinRateHistory(data.winRateHistory);
+        setSweepRateHistory(data.sweepRateHistory);
+        setChinchonWins(data.chinchonWins);
+        if (data.progress >= 100) setSimRun(false);
+        return;
+      }
+
+      if (data.type === "benchmarkProgress") {
+        setBenchmarks(prev => ({ ...prev, [data.botId]: { wins: data.wins, total: data.total } }));
+        setBenchmarking(null);
+        return;
+      }
+
+      if (data.type === "tournamentProgress") {
+        setTourProgress(data.progress);
+        setTourResults(data.results);
+        setTourCurrentMatch(data.currentMatch);
+        setTourCurrentStats(data.currentStats);
+        setTourMatchSnapshots(data.matchSnapshots);
+        if (data.done || data.progress >= 100) {
+          stopTourRef.current = true;
+          setTourRunning(false);
+        }
+      }
+    });
+  };
+
+  return () => {
+    worker.terminate();
+    workerRef.current = null;
+  };
 }, []);
 
 // Sim
@@ -1345,6 +1746,24 @@ const [chartTab, setChartTab] = useState<"winrate" | "sweep">("winrate");
 const [chartZoom, setChartZoom] = useState<number | null>(null);
 const stopRef = useRef(false);
 
+const resetSimState = useCallback(() => {
+  cancelActiveWorkerJob();
+  stopRef.current = true;
+  setSimRun(false);
+  setBenchmarking(null);
+  setProg(0);
+  setChartData(null);
+  setRoundWins([0, 0]);
+  setGameWins([0, 0]);
+  setSweepWins([0, 0, 0]);
+  setTotalRounds(0);
+  setWinRateHistory([]);
+  setSweepRateHistory([]);
+  setChinchonWins([0, 0]);
+  setPromptCopied(false);
+  setNewBotPromptCopied(false);
+}, [cancelActiveWorkerJob]);
+
 // Tournament
 const [tourBots, setTourBots] = useState([0, 1, 2, 3]);
 const [tourResults, setTourResults] = useState(null);
@@ -1366,15 +1785,25 @@ const [tourMatrixView, setTourMatrixView] = useState<"percent" | "absolute">("pe
 const [tourSection, setTourSection] = useState<"fixture" | "results">("fixture");
 
 const resetTournamentState = useCallback(() => {
+  cancelActiveWorkerJob();
   stopTourRef.current = true;
   setTourRunning(false);
+  setBenchmarking(null);
   setTourProgress(0);
   setTourCurrentMatch(null);
   setTourCurrentStats(null);
   setTourResults(null);
   setTourMatchSnapshots(createEmptyTourMatchSnapshots());
   setTourSection("fixture");
-}, []);
+}, [cancelActiveWorkerJob]);
+
+const handleTabChange = useCallback((nextTab) => {
+  resetSimState();
+  resetTournamentState();
+  autoRef.current = false;
+  setAutoP(false);
+  setTab(nextTab);
+}, [resetSimState, resetTournamentState]);
 
 // Match viewer
 const [mvB0, setMvB0] = useState(0);
@@ -1393,185 +1822,64 @@ const [showBot, setShowBot] = useState(false);
 
 // -- Sim --
 const runSim = useCallback(() => {
-stopRef.current = false; setSimRun(true); setProg(0); setChartData(null);
-setRoundWins([0, 0]); setGameWins([0, 0]); setSweepWins([0, 0, 0]); setTotalRounds(0);
-setWinRateHistory([]); setSweepRateHistory([]); setChinchonWins([0, 0]); setPromptCopied(false);
-const fd = {}, dd = {}; let rw0 = 0, rw1 = 0, gw0 = 0, gw1 = 0, sw0 = 0, sw1 = 0, splits = 0, tr = 0, cc0 = 0, cc1 = 0, done = 0;
-const wrSnaps: {simulations: number, rate0: number, rate1: number}[] = [];
-const swSnaps: {pairs: number, rate0: number, rate1: number}[] = [];
-const n0 = BOT[simB0].name, n1 = BOT[simB1].name;
-const MAX_SIMS = numSims;
-let lastStableRates = null;
-let stableStreak = 0;
-const tick = () => {
-if (stopRef.current) { setSimRun(false); return; }
-const batch = MAX_SIMS <= 100 ? 1 : MAX_SIMS <= 1000 ? 5 : MAX_SIMS <= 10000 ? 50 : 200;
-let reachedStable = false;
-const simsThisTick = Math.min(batch, MAX_SIMS - done);
-for (let i = 0; i < simsThisTick; i++) {
-const [gA, gB] = simulateGamePair(simB0, simB1);
-const winnerA = gA.gameLoser === 0 ? 1 : 0;
-const winnerB = gB.gameLoser === 0 ? 1 : 0;
-if (winnerA === 0) gw0++; else gw1++;
-if (winnerB === 0) gw0++; else gw1++;
-if (winnerA === 0 && winnerB === 0) sw0++;
-else if (winnerA === 1 && winnerB === 1) sw1++;
-else splits++;
-for (const game of [gA, gB]) {
-for (const rs of game.roundStats) {
-tr++;
-if (rs.winner === 0) { rw0++; fd[rs.cards] = (fd[rs.cards] || 0) + 1; } else { rw1++; dd[rs.cards] = (dd[rs.cards] || 0) + 1; }
-if (rs.chinchon) { if (rs.winner === 0) cc0++; else cc1++; }
-}
-}
-done++;
-if (useStabilized) {
-const truncatedRates = getTruncatedWinRates(gw0, gw1, stabilizeDecimals);
-stableStreak = getNextStableStreak(lastStableRates, truncatedRates, stableStreak);
-lastStableRates = truncatedRates;
-if (done >= MIN_SIMULATIONS_BEFORE_STABLE_STOP && stableStreak >= STABLE_SIMULATION_STREAK) {
-reachedStable = true;
-break;
-}
-}
-}
-const [winRate0, winRate1] = getWinRates(gw0, gw1);
-if (done > 0) wrSnaps.push({ simulations: done, rate0: winRate0, rate1: winRate1 });
-const totalPairs = sw0 + sw1 + splits;
-if (totalPairs > 0) swSnaps.push({ pairs: totalPairs, rate0: (sw0 / totalPairs) * 100, rate1: (sw1 / totalPairs) * 100 });
-setProg(done >= MAX_SIMS || reachedStable ? 100 : Math.round(done / MAX_SIMS * 100));
-setChartData(buildChartData(fd, dd, n0, n1));
-setRoundWins([rw0, rw1]); setGameWins([gw0, gw1]); setSweepWins([sw0, sw1, splits]); setTotalRounds(tr);
-setWinRateHistory([...wrSnaps]); setSweepRateHistory([...swSnaps]); setChinchonWins([cc0, cc1]);
-if (reachedStable || done >= MAX_SIMS) { setSimRun(false); return; }
-setTimeout(tick, 0);
-};
-setTimeout(tick, 0);
-}, [simB0, simB1, useStabilized, stabilizeDecimals, numSims]);
+  resetSimState();
+  const jobId = nextWorkerJobId();
+  stopRef.current = false;
+  setSimRun(true);
+  workerRef.current?.postMessage({
+    type: "runSim",
+    jobId,
+    customConfigs,
+    simB0,
+    simB1,
+    numSims,
+    useStabilized,
+    stabilizeDecimals,
+  });
+}, [customConfigs, nextWorkerJobId, numSims, resetSimState, simB0, simB1, stabilizeDecimals, useStabilized]);
 
 const runTournament = useCallback(() => {
-if (new Set(tourBots).size < 4) return;
-stopTourRef.current = false;
-const initialResults = createEmptyTournamentResults();
-const initialSnapshots = createEmptyTourMatchSnapshots();
-const firstMatch = TOURNAMENT_FIXTURE[0] ?? null;
-if (firstMatch) initialSnapshots[firstMatch.flatIndex] = buildTournamentMatchSnapshot(firstMatch, initialResults, "running");
-setTourRunning(true);
-setTourProgress(0);
-setTourCurrentMatch(firstMatch);
-setTourCurrentStats(firstMatch ? initialSnapshots[firstMatch.flatIndex] : null);
-setTourResults(initialResults);
-setTourMatchSnapshots(initialSnapshots);
-
-const mutableResults = createEmptyTournamentResults();
-const wins = mutableResults.wins;
-const gamesPlayed = mutableResults.games;
-const mirrorWins = mutableResults.mirrorWins;
-const mirrorPairs = mutableResults.mirrorPairs;
-const chinchones = mutableResults.chinchones;
-
-const MAX_SIMS = numSims;
-const BATCH = 20;
-let pairIdx = 0, simsDone = 0, currentWins = 0, currentTotal = 0, currentMirror = [0, 0], currentChinchones = [0, 0];
-let lastStableRates = null;
-let stableStreak = 0;
-
-const tick = () => {
-  if (stopTourRef.current) { setTourRunning(false); return; }
-  const match = TOURNAMENT_FIXTURE[pairIdx];
-  if (!match) {
-    setTourRunning(false);
-    setTourProgress(100);
-    setTourCurrentMatch(null);
-    setTourCurrentStats(null);
-    return;
-  }
-  const { aSlot: ai, bSlot: bi, flatIndex } = match;
-  const globalA = tourBots[ai], globalB = tourBots[bi];
-  if (simsDone >= MAX_SIMS) {
-    pairIdx++;
-    simsDone = 0; currentWins = 0; currentTotal = 0; currentMirror = [0, 0]; currentChinchones = [0, 0];
-    lastStableRates = null; stableStreak = 0;
-    if (pairIdx >= TOURNAMENT_FIXTURE.length) { setTourRunning(false); setTourProgress(100); setTourCurrentMatch(null); setTourCurrentStats(null); return; }
-  }
-  const simsThisTick = Math.min(BATCH, MAX_SIMS - simsDone);
-  let stable = false;
-  for (let i = 0; i < simsThisTick; i++) {
-    const [gA, gB] = simulateGamePair(globalA, globalB);
-    const wA = (gA.gameLoser === 1 ? 1 : 0) + (gB.gameLoser === 1 ? 1 : 0);
-    wins[ai][bi] += wA;
-    gamesPlayed[ai][bi] += 2;
-    const winnerA = gA.gameLoser === 0 ? 1 : 0;
-    const winnerB = gB.gameLoser === 0 ? 1 : 0;
-    if (winnerA === 0 && winnerB === 0) { mirrorWins[ai][bi] += 1; currentMirror[0] += 1; }
-    else if (winnerA === 1 && winnerB === 1) { mirrorWins[bi][ai] += 1; currentMirror[1] += 1; }
-    mirrorPairs[ai][bi] += 1;
-    const chinA0 = gA.roundStats.filter(rs => rs.chinchon && rs.winner === 0).length;
-    const chinA1 = gA.roundStats.filter(rs => rs.chinchon && rs.winner === 1).length;
-    const chinB0 = gB.roundStats.filter(rs => rs.chinchon && rs.winner === 0).length;
-    const chinB1 = gB.roundStats.filter(rs => rs.chinchon && rs.winner === 1).length;
-    const chinForA = chinA0 + chinB0;
-    const chinForB = chinA1 + chinB1;
-    chinchones[ai][bi] += chinForA;
-    chinchones[bi][ai] += chinForB;
-    currentChinchones[0] += chinForA;
-    currentChinchones[1] += chinForB;
-    currentWins += wA;
-    currentTotal += 2;
-    simsDone++;
-    if (tourUseStabilized) {
-      const truncatedRates = getTruncatedWinRates(currentWins, currentTotal - currentWins, tourStabilizeDecimals);
-      stableStreak = getNextStableStreak(lastStableRates, truncatedRates, stableStreak);
-      lastStableRates = truncatedRates;
-      if (simsDone >= MIN_SIMULATIONS_BEFORE_STABLE_STOP && stableStreak >= STABLE_SIMULATION_STREAK) {
-        stable = true;
-        break;
-      }
-    }
-  }
-  const matchFinished = stable || simsDone >= MAX_SIMS;
-  const nextResults = {
-    wins: wins.map(r => [...r]),
-    games: gamesPlayed.map(r => [...r]),
-    mirrorWins: mirrorWins.map(r => [...r]),
-    mirrorPairs: mirrorPairs.map(r => [...r]),
-    chinchones: chinchones.map(r => [...r]),
-  };
-  const snapshot = buildTournamentMatchSnapshot(match, nextResults, matchFinished ? "finished" : "running");
-  const fraction = matchFinished ? 1 : simsDone / MAX_SIMS;
-  setTourProgress(Math.min(99, Math.round(((pairIdx + fraction) / TOURNAMENT_FIXTURE.length) * 100)));
-  setTourCurrentMatch(match);
-  setTourCurrentStats(snapshot);
-  setTourResults(nextResults);
-  setTourMatchSnapshots(prev => {
-    const next = [...prev];
-    next[flatIndex] = snapshot;
-    return next;
+  if (new Set(tourBots).size < 4) return;
+  cancelActiveWorkerJob();
+  const jobId = nextWorkerJobId();
+  const initialResults = createEmptyTournamentResults();
+  const initialSnapshots = createEmptyTourMatchSnapshots();
+  const firstMatch = TOURNAMENT_FIXTURE[0] ?? null;
+  if (firstMatch) initialSnapshots[firstMatch.flatIndex] = buildTournamentMatchSnapshot(firstMatch, initialResults, "running");
+  stopTourRef.current = false;
+  setTourRunning(true);
+  setTourProgress(0);
+  setTourCurrentMatch(firstMatch);
+  setTourCurrentStats(firstMatch ? initialSnapshots[firstMatch.flatIndex] : null);
+  setTourResults(initialResults);
+  setTourMatchSnapshots(initialSnapshots);
+  workerRef.current?.postMessage({
+    type: "runTournament",
+    jobId,
+    customConfigs,
+    tourBots,
+    numSims,
+    useStabilized: tourUseStabilized,
+    stabilizeDecimals: tourStabilizeDecimals,
   });
-  if (matchFinished) {
-    pairIdx++;
-    simsDone = 0; currentWins = 0; currentTotal = 0; currentMirror = [0, 0]; currentChinchones = [0, 0];
-    lastStableRates = null; stableStreak = 0;
-    if (pairIdx >= TOURNAMENT_FIXTURE.length) { setTourRunning(false); setTourProgress(100); setTourCurrentMatch(null); setTourCurrentStats(null); return; }
-    const nextMatch = TOURNAMENT_FIXTURE[pairIdx];
-    const nextSnapshot = buildTournamentMatchSnapshot(nextMatch, nextResults, "running");
-    setTourCurrentMatch(nextMatch);
-    setTourCurrentStats(nextSnapshot);
-    setTourMatchSnapshots(prev => {
-      const next = [...prev];
-      next[nextMatch.flatIndex] = nextSnapshot;
-      return next;
-    });
-  }
-  setTimeout(tick, 0);
-};
-setTimeout(tick, 0);
-}, [tourBots, tourUseStabilized, tourStabilizeDecimals, numSims]);
+}, [cancelActiveWorkerJob, customConfigs, nextWorkerJobId, numSims, tourBots, tourStabilizeDecimals, tourUseStabilized]);
+
+const runBenchmark = useCallback((cfg) => {
+  cancelActiveWorkerJob();
+  const jobId = nextWorkerJobId();
+  setBenchmarking(cfg.id);
+  workerRef.current?.postMessage({
+    type: "runBenchmark",
+    jobId,
+    customConfigs,
+    botId: cfg.id,
+  });
+}, [cancelActiveWorkerJob, customConfigs, nextWorkerJobId]);
 
 // -- Match viewer --
-const replay = replayPair ? (matchRound === "A" ? replayPair.replayA : replayPair.replayB) : null;
+const replay = useMemo(() => replayPair ? (matchRound === "A" ? replayPair.replayA : replayPair.replayB) : null, [matchRound, replayPair]);
 const matchSwapped = matchRound === "B";
-const newReplay = () => { autoRef.current = false; setAutoP(false); setReplayPair(generateReplayPair(mvB0, mvB1)); setMatchRound("A"); setSi(0); };
+const newReplay = () => { autoRef.current = false; setAutoP(false); setReplayPair(generateReplayPair(customConfigs, mvB0, mvB1)); setMatchRound("A"); setSi(0); };
 const switchMR = (r) => { autoRef.current = false; setAutoP(false); setMatchRound(r); setSi(0); };
 const mNext = useCallback(() => setSi(p => replay ? Math.min(p + 1, replay.length - 1) : p), [replay]);
 const mPrev = () => setSi(p => Math.max(p - 1, 0));
@@ -1596,6 +1904,16 @@ let card;
 if (src === "discard" && ng.discardPile.length) card = ng.discardPile.pop(); else if (ng.deck.length) card = ng.deck.pop(); else return;
 ng.pHand.push(card); ng.drawnCard = card; ng.phase = "playerDiscard"; ng.selectedIdx = null; ng.message = null; setG(ng);
 };
+const reorderHand = useCallback((fromIdx, toIdx) => {
+if (!g || g.turn !== 0) return;
+if (g.phase !== "playerDraw" && g.phase !== "playerDiscard") return;
+if (fromIdx === toIdx || fromIdx < 0 || toIdx < 0) return;
+const nextHand = [...g.pHand];
+const [moved] = nextHand.splice(fromIdx, 1);
+if (!moved) return;
+nextHand.splice(toIdx, 0, moved);
+setG({ ...g, pHand: nextHand, selectedIdx: null });
+}, [g]);
 const playerDiscardWithIdx = (idx) => {
 if (!g || g.phase !== "playerDiscard") return;
 const ng = { ...g, pHand: [...g.pHand], discardPile: [...g.discardPile] };
@@ -1650,7 +1968,7 @@ const ng = initRound(ns, g.dealer === 0 ? 1 : 0); setG(ng);
 const resetGame = () => { setG(null); setBotChoice(null); setHistory([]); };
 
 // Derived
-const step = replay?.[si];
+const step = useMemo(() => replay?.[si], [replay, si]);
 const isLast = replay && si >= replay.length - 1;
 const total = gameWins[0] + gameWins[1];
 const totalR = totalRounds;
@@ -1663,80 +1981,78 @@ const m = findBestMelds(test);
 return m.minFree <= 1 && m.resto <= 5;
 });
 }
-const pML = g?.pHand ? findBestMelds(g.pHand) : null;
-const bML = g?.bHand ? findBestMelds(g.bHand) : null;
+const pML = useMemo(() => g?.pHand ? findBestMelds(g.pHand) : null, [g?.pHand]);
+const bML = useMemo(() => g?.bHand ? findBestMelds(g.bHand) : null, [g?.bHand]);
 const topD = g?.discardPile?.length ? g.discardPile[g.discardPile.length - 1] : null;
 const mvBots = [BOT[mvB0], BOT[mvB1]];
 const bn = (slot) => matchSwapped ? mvBots[slot === 0 ? 1 : 0] : mvBots[slot];
+const safeTourResults = useMemo(
+  () => (isValidTournamentResults(tourResults) ? tourResults : null),
+  [tourResults],
+);
+const tournamentCeremony = useMemo(
+  () => {
+    if (!safeTourResults) return null;
+    try {
+      return buildTournamentCeremonyData(safeTourResults);
+    } catch {
+      return null;
+    }
+  },
+  [safeTourResults],
+);
+const liveRegionMessage = useMemo(() => {
+if (simRun) return `Simulación en curso: ${prog}% completado.`;
+if (tourRunning && tourCurrentMatch) return `Torneo en curso: fecha ${tourCurrentMatch.fechaIndex + 1}, partido ${tourCurrentMatch.matchIndex + 1}.`;
+if (tab === "torneo" && tourProgress === 100 && safeTourResults) return "Torneo finalizado. Ya podés pasar a resultados.";
+if (tab === "match" && replay) return `Replay listo. Paso ${si + 1} de ${replay.length}.`;
+if (benchmarking) return "Benchmark de bot en curso.";
+return "Chinchón Lab listo.";
+}, [benchmarking, prog, replay, safeTourResults, si, simRun, tab, tourCurrentMatch, tourProgress, tourRunning]);
 
 return (
-<div className="min-h-screen bg-gray-950 text-gray-100 flex flex-col items-center px-3 py-5 font-sans">
-<h1 className="text-xl font-extrabold tracking-tight mb-0.5">Chinchón Lab</h1>
-<p className="text-gray-600 text-xs mb-3">Baraja de 50 cartas (incluye 2 comodines) · {BOT.length} bots</p>
+<main id="main-content" className="min-h-screen bg-gray-950 text-gray-100 flex flex-col items-center px-3 py-5 font-sans chinchon-lab-page">
+  <header className="lab-hero" aria-label="Encabezado de Chinchón Lab">
+    <h1 className="lab-hero__title">
+      Chinchón Lab <span className="lab-hero__title-mark" aria-hidden="true">🧪</span>
+    </h1>
+    <p className="lab-hero__subtitle">Arena de bots 🤖, partidas espejo 🪞 y torneos 🏆 con mucha aura ✨.</p>
+  </header>
+  <div className="lab-status sr-only" aria-live="polite">{liveRegionMessage}</div>
 
-  <div className="flex gap-0.5 bg-gray-900 rounded-lg p-1 mb-4">
-    {[["sim", "Simulación"], ["torneo", "Torneo"], ["match", "Ver Partida"], ["play", "Jugar"], ["custom", "Bots"], ["reglas", "Reglas"]].map(([k, l]) => (
-      <button key={k} onClick={() => {
-        // Stop and clear sim
-        stopRef.current = true;
-        setSimRun(false); setProg(0); setChartData(null);
-        setRoundWins([0, 0]); setGameWins([0, 0]); setSweepWins([0, 0, 0]); setTotalRounds(0);
-        setWinRateHistory([]); setSweepRateHistory([]); setChinchonWins([0, 0]);
-        setPromptCopied(false); setNewBotPromptCopied(false);
-        // Stop and clear tournament
-        resetTournamentState();
-        setTab(k);
-      }} className={`px-3 py-1.5 rounded-md text-xs font-medium transition-colors ${tab === k ? "bg-gray-700 text-white" : "text-gray-500 hover:text-gray-300"}`}>{l}</button>
-    ))}
-  </div>
+  <LabTabBar current={tab} onChange={handleTabChange} tabs={LAB_TABS} />
 
   {/* --- SIM --- */}
   {tab === "sim" && (
-    <div className="flex flex-col items-center w-full max-w-2xl">
-      <div className="flex flex-col gap-3 mb-4 w-full">
-        <BotPicker label="Bot 1" value={simB0} onChange={(v) => { setSimB0(v); if (v === simB1) setSimB1(BOT.findIndex((_, i) => i !== v)); stopRef.current = true; setSimRun(false); setProg(0); setChartData(null); setRoundWins([0, 0]); setGameWins([0, 0]); setSweepWins([0, 0, 0]); setTotalRounds(0); setWinRateHistory([]); setSweepRateHistory([]); setChinchonWins([0, 0]); }} exclude={simB1} />
-        <div className="text-center text-gray-600 text-xs">vs</div>
-        <BotPicker label="Bot 2" value={simB1} onChange={(v) => { setSimB1(v); if (v === simB0) setSimB0(BOT.findIndex((_, i) => i !== v)); stopRef.current = true; setSimRun(false); setProg(0); setChartData(null); setRoundWins([0, 0]); setGameWins([0, 0]); setSweepWins([0, 0, 0]); setTotalRounds(0); setWinRateHistory([]); setSweepRateHistory([]); setChinchonWins([0, 0]); }} exclude={simB0} />
-      </div>
-      <div className="flex gap-3 mb-2 text-center text-xs text-gray-500">
-        <div className="rounded-lg px-3 py-1.5 border" style={{ borderColor: BOT[simB0].color + "40", color: BOT[simB0].color }}>{BOT[simB0].emoji} {BOT[simB0].desc}</div>
-        <div className="rounded-lg px-3 py-1.5 border" style={{ borderColor: BOT[simB1].color + "40", color: BOT[simB1].color }}>{BOT[simB1].emoji} {BOT[simB1].desc}</div>
+    <LabPanel
+      title="Simulación"
+      subtitle="Configurá el cruce, corré miles de partidas espejo y seguí el progreso sin congelar la UI."
+    >
+    <div className="lab-workspace">
+      <div className="lab-config-grid mb-4 w-full">
+        <BotLineupPicker
+          title="Elegí el cruce"
+          subtitle="Una sola lista, dos seleccionados y orden visual de enfrentamiento."
+          labels={["Bot 1", "Bot 2"]}
+          values={[simB0, simB1]}
+          onChange={(next) => { setSimB0(next[0]); setSimB1(next[1]); resetSimState(); }}
+          disabled={simRun}
+        />
+        <SimulationCountPicker
+          label="Simulaciones"
+          value={numSims}
+          onChange={setNumSims}
+          disabled={simRun}
+          tone="emerald"
+          useStabilized={useStabilized}
+          onUseStabilizedChange={setUseStabilized}
+          stabilizeDecimals={stabilizeDecimals}
+          onStabilizeDecimalsChange={setStabilizeDecimals}
+          stabilizedCopy={`Se corta solo si el winrate truncado a ${stabilizeDecimals} ${stabilizeDecimals === 1 ? "decimal" : "decimales"} no cambia durante ${STABLE_SIMULATION_STREAK} simulaciones seguidas.`}
+        />
       </div>
       <div className="flex flex-col items-center gap-2 mb-2 w-full">
-        <label className="text-sm text-gray-400">Simulaciones</label>
-        <div className="flex flex-wrap gap-1.5 justify-center">
-          {[10, 50, 100, 500, 1000, 5000, 10000, 50000, 100000].map(n => (
-            <button key={n} onClick={() => setNumSims(n)} disabled={simRun}
-              className={`px-2.5 py-1 rounded-md text-xs font-medium border transition-all disabled:opacity-40
-                ${numSims === n ? "border-emerald-500 text-emerald-400 bg-emerald-500/10" : "border-gray-700 text-gray-400 hover:border-gray-500"}`}>
-              {n >= 1000 ? `${n / 1000}k` : n}
-            </button>
-          ))}
-        </div>
-
-        {/* Stabilization config */}
-        <div className="mt-2 w-full bg-gray-800 rounded-lg p-3 border border-gray-700">
-          <label className="flex items-center gap-2 cursor-pointer mb-2">
-            <input type="checkbox" checked={useStabilized} onChange={(e) => setUseStabilized(e.target.checked)} disabled={simRun}
-              className="w-4 h-4 rounded cursor-pointer" />
-            <span className="text-xs text-gray-400">Modo estabilizado</span>
-          </label>
-          {useStabilized && (
-            <div className="flex gap-3 flex-wrap text-xs">
-              <div>
-                <label className="text-gray-500 block mb-1">Decimales de precisión</label>
-                <select value={stabilizeDecimals} onChange={(e) => setStabilizeDecimals(Number(e.target.value))} disabled={simRun}
-                  className="bg-gray-900 border border-gray-600 rounded px-2 py-1 text-gray-200 text-xs">
-                  {[0, 1, 2, 3].map(d => <option key={d} value={d}>{d}</option>)}
-                </select>
-              </div>
-              <p className="text-[11px] leading-snug text-gray-500 max-w-xs">
-                Corta cuando los winrates truncados no cambian durante {STABLE_SIMULATION_STREAK} simulaciones seguidas.
-              </p>
-            </div>
-          )}
-        </div>
-
+        <StickyActionBar>
         {!simRun ? (
           <div className="flex gap-2 mt-1 flex-wrap justify-center">
             <button onClick={runSim} className="bg-emerald-600 hover:bg-emerald-500 text-white px-5 py-1.5 rounded-md text-sm font-semibold active:scale-95">
@@ -1745,9 +2061,10 @@ return (
                 : `Simular ${numSims >= 1000 ? `${numSims / 1000}k` : numSims} simulaciones`}
             </button>
           </div>
-        ) : <button onClick={() => { stopRef.current = true; }} className="bg-red-600 hover:bg-red-500 text-white px-5 py-1.5 rounded-md text-sm font-semibold mt-1">Parar ({prog}%)</button>}
+        ) : <button onClick={resetSimState} className="bg-red-600 hover:bg-red-500 text-white px-5 py-1.5 rounded-md text-sm font-semibold mt-1">Parar ({prog}%)</button>}
+        </StickyActionBar>
       </div>
-      <div className="text-xs text-gray-600 mb-3 text-center">Cada simulación = 2 partidas espejo (misma repartida, manos invertidas) · Chinchón = gana partida</div>
+      <div className="lab-copy-note mb-3 text-center">Cada simulación son 2 partidas espejo con la misma repartida e inversión de manos. Si aparece chinchón, la partida termina al instante.</div>
       {simRun && <div className="w-full h-1 bg-gray-800 rounded-full mb-3 overflow-hidden"><div className="h-full bg-gradient-to-r from-emerald-500 to-violet-500 transition-all" style={{ width: `${prog}%` }} /></div>}
 
       {total > 0 && (
@@ -1804,29 +2121,32 @@ return (
           <div className="w-full bg-gray-900 border border-gray-800 rounded-xl p-3 mb-4">
             {/* Header row: tabs left, zoom right */}
             <div className="flex items-center justify-between mb-2 flex-wrap gap-2">
-              <div className="flex gap-0.5 bg-gray-800 rounded-lg p-0.5">
+              <div className="lab-segmented">
                 <button onClick={() => setChartTab("winrate")}
-                  className={`px-2.5 py-1 rounded-md text-xs font-medium transition-colors ${chartTab === "winrate" ? "bg-gray-700 text-white" : "text-gray-500 hover:text-gray-300"}`}>
+                  aria-pressed={chartTab === "winrate"}
+                  className="lab-segmented__button">
                   Winrate
                 </button>
                 <button onClick={() => setChartTab("sweep")}
-                  className={`px-2.5 py-1 rounded-md text-xs font-medium transition-colors ${chartTab === "sweep" ? "bg-gray-700 text-white" : "text-gray-500 hover:text-gray-300"}`}>
+                  aria-pressed={chartTab === "sweep"}
+                  className="lab-segmented__button">
                   Corridas espejo
                 </button>
               </div>
-              <div className="flex gap-0.5 items-center">
+              <div className="lab-chip-row">
                 <span className="text-xs text-gray-600 mr-1">Zoom:</span>
                 {ZOOM_OPTS.map(z => (
                   <button key={z ?? "all"} onClick={() => setChartZoom(z)}
-                    className={`px-1.5 py-0.5 rounded text-xs border transition-all ${chartZoom === z ? "border-gray-500 text-gray-200 bg-gray-700" : "border-gray-700 text-gray-600 hover:text-gray-400 hover:border-gray-600"}`}>
+                    aria-pressed={chartZoom === z}
+                    className="lab-chip-button">
                     {z === null ? "Todo" : z}
                   </button>
                 ))}
               </div>
             </div>
-            <p className="text-xs text-gray-600 text-center mb-2">
+            <p className="lab-copy-note text-center mb-2">
               {chartTab === "winrate"
-                ? "Winrate acumulado por simulación espejo · si los porcentajes truncados se clavan, la muestra alcanza"
+                ? "Winrate acumulado por simulación espejo. Si los porcentajes truncados dejan de moverse, la muestra ya alcanzó estabilidad."
                 : "% de simulaciones donde cada bot gana ambas partidas espejo (sin empates)"}
             </p>
             <RateChart data={sliced} bot0={BOT[simB0]} bot1={BOT[simB1]} />
@@ -1916,18 +2236,27 @@ return (
 
       {!chartData && !simRun && <div className="text-gray-600 mt-6 text-sm">Elegí los bots y dale a <span className="text-emerald-500">Simular</span></div>}
     </div>
+    </LabPanel>
   )}
 
   {/* --- MATCH --- */}
   {tab === "match" && (
-    <div className="flex flex-col items-center w-full max-w-lg">
-      <div className="flex flex-col gap-3 mb-4 w-full">
-        <BotPicker label="Bot 1" value={mvB0} onChange={(v) => { setMvB0(v); if (v === mvB1) setMvB1(BOT.findIndex((_, i) => i !== v)); setReplayPair(null); }} exclude={mvB1} />
-        <div className="text-center text-gray-600 text-xs">vs</div>
-        <BotPicker label="Bot 2" value={mvB1} onChange={(v) => { setMvB1(v); if (v === mvB0) setMvB0(BOT.findIndex((_, i) => i !== v)); setReplayPair(null); }} exclude={mvB0} />
+    <LabPanel
+      title="Ver partida"
+      subtitle="Replay espejo paso a paso para inspeccionar decisiones, robos y cortes."
+    >
+    <div className="lab-workspace lab-workspace--compact">
+      <BotLineupPicker
+        title="Elegí la partida a inspeccionar"
+        subtitle="Marcá dos bots y después generá una repartida espejo para mirar paso a paso."
+        labels={["Bot 1", "Bot 2"]}
+        values={[mvB0, mvB1]}
+        onChange={(next) => { setMvB0(next[0]); setMvB1(next[1]); setReplayPair(null); }}
+      />
+      <div className="lab-inline-actions">
+        <button onClick={newReplay} className="bg-amber-600 hover:bg-amber-500 text-white px-5 py-1.5 rounded-md text-sm font-semibold active:scale-95">Nueva repartida</button>
       </div>
-      <button onClick={newReplay} className="bg-amber-600 hover:bg-amber-500 text-white px-5 py-1.5 rounded-md text-sm font-semibold active:scale-95 mb-3">Nueva repartida</button>
-      {!replayPair && <div className="text-gray-600 text-sm mt-2">Dale a <span className="text-amber-400">Nueva repartida</span></div>}
+      {!replayPair && <div className="w-full text-gray-600 text-sm">Dale a <span className="text-amber-400">Nueva repartida</span></div>}
       {replayPair && replay && step && (
         <div className="w-full">
           <div className="flex items-center justify-center gap-1 mb-3">
@@ -1942,12 +2271,12 @@ return (
 
           {/* Step counter + controls together */}
           <div className="flex items-center justify-center gap-2 mb-3">
-            <button onClick={mFirst} disabled={si === 0} className="bg-gray-800 hover:bg-gray-700 disabled:opacity-25 text-white px-2 py-1 rounded text-xs font-medium">⏮</button>
-            <button onClick={mPrev} disabled={si === 0} className="bg-gray-800 hover:bg-gray-700 disabled:opacity-25 text-white px-2 py-1 rounded text-xs font-medium">◀</button>
+            <button aria-label="Ir al primer paso" onClick={mFirst} disabled={si === 0} className="bg-gray-800 hover:bg-gray-700 disabled:opacity-25 text-white px-2 py-1 rounded text-xs font-medium">⏮</button>
+            <button aria-label="Ir al paso anterior" onClick={mPrev} disabled={si === 0} className="bg-gray-800 hover:bg-gray-700 disabled:opacity-25 text-white px-2 py-1 rounded text-xs font-medium">◀</button>
             <span className="text-xs text-gray-500 w-16 text-center">{si + 1} / {replay.length}</span>
-            <button onClick={mNext} disabled={isLast} className="bg-gray-800 hover:bg-gray-700 disabled:opacity-25 text-white px-2 py-1 rounded text-xs font-medium">▶</button>
-            <button onClick={mLast} disabled={isLast} className="bg-gray-800 hover:bg-gray-700 disabled:opacity-25 text-white px-2 py-1 rounded text-xs font-medium">⏭</button>
-            <button onClick={togAuto} className={`px-2 py-1 rounded text-xs font-medium ${autoP ? "bg-red-700" : "bg-amber-700"} text-white`}>{autoP ? "⏸" : "▶ Auto"}</button>
+            <button aria-label="Ir al siguiente paso" onClick={mNext} disabled={isLast} className="bg-gray-800 hover:bg-gray-700 disabled:opacity-25 text-white px-2 py-1 rounded text-xs font-medium">▶</button>
+            <button aria-label="Ir al último paso" onClick={mLast} disabled={isLast} className="bg-gray-800 hover:bg-gray-700 disabled:opacity-25 text-white px-2 py-1 rounded text-xs font-medium">⏭</button>
+            <button aria-label={autoP ? "Pausar reproducción automática" : "Iniciar reproducción automática"} onClick={togAuto} className={`px-2 py-1 rounded text-xs font-medium ${autoP ? "bg-red-700" : "bg-amber-700"} text-white`}>{autoP ? "⏸" : "▶ Auto"}</button>
           </div>
 
           {/* Event box */}
@@ -1996,17 +2325,22 @@ return (
         </div>
       )}
     </div>
+    </LabPanel>
   )}
 
   {/* --- PLAY --- */}
   {tab === "play" && (
-    <div className="flex flex-col items-center w-full max-w-lg">
+    <LabPanel
+      title="Jugar"
+      subtitle="Modo práctica contra bots, con historial de rondas y ayudas de lectura para la mano."
+    >
+    <div className="lab-workspace lab-workspace--compact">
       {!g && (
-        <div className="text-center">
+        <div className="w-full">
           <p className="text-gray-400 text-sm mb-4">Elegí tu rival:</p>
-          <div className="flex flex-wrap gap-2 justify-center">
+          <div className="lab-card-grid">
             {BOT.map((b, i) => (
-              <button key={i} onClick={() => startGame(i)} className={`${b.bg} border ${b.border} rounded-lg px-4 py-3 transition-all hover:scale-105 active:scale-95 w-36`}>
+              <button key={i} onClick={() => startGame(i)} className={`${b.bg} border ${b.border} rounded-lg px-4 py-3 transition-all hover:scale-105 active:scale-95 w-full text-left`}>
                 <div className="font-bold text-sm mb-0.5" style={{ color: b.color }}>{b.emoji} {b.name}</div>
                 <div className="text-gray-400 text-xs">{b.desc}</div>
               </button>
@@ -2017,13 +2351,17 @@ return (
       {g && botChoice !== null && (
         <PlayGame g={g} bot={BOT[botChoice]} history={history} showBot={showBot} bML={bML} pML={pML} topD={topD}
           canPlayerCut={canPlayerCut} setShowBot={setShowBot} playerDraw={playerDraw}
-          selectCard={selectCard} nextRound={nextRound} resetGame={resetGame} sortHand={sortHand} toggleCutMode={toggleCutMode} />
+          selectCard={selectCard} nextRound={nextRound} resetGame={resetGame} sortHand={sortHand} toggleCutMode={toggleCutMode}
+          reorderHand={reorderHand} />
       )}
     </div>
+    </LabPanel>
   )}
 
   {/* --- TORNEO --- */}
   {tab === "torneo" && (() => {
+    const hasTournamentResults = safeTourResults !== null;
+    const fallbackCeremony = buildTournamentCeremonyData(createEmptyTournamentResults());
     const {
       botTotals,
       rankingWins,
@@ -2032,25 +2370,24 @@ return (
       beatAllAwardWinner,
       lostToEveryoneAward,
       noRiskBots,
+      everyoneShouldWinPrizeBots,
       ceremonyRanking,
       ceremonyChampion,
       winsAwardWinner,
       chinchonAwardWinner,
       mirrorAwardWinner,
-    } = buildTournamentCeremonyData(tourResults);
-    const isDone = !tourRunning && tourProgress === 100 && tourResults !== null;
+    } = tournamentCeremony ?? fallbackCeremony;
+    const isDone = !tourRunning && tourProgress === 100 && hasTournamentResults;
     const medals = ["🥇", "🥈", "🥉", "🗑️"];
-    const extraAwardCards = [
-    ];
-    const awardCards = [
+    const slots = tourBots.map((_, idx) => idx);
+    const goodAwardCards = [
       {
         key: "wins",
         title: "Mayor ganador",
         subtitle: "2 pts al primero, el resto nada",
         emoji: "👑",
         accent: "#fbbf24",
-        winner: winsAwardWinner,
-        detail: (winner) => `${winner.wins} victorias totales`,
+        winners: [{ idx: winsAwardWinner.idx, detail: `${winsAwardWinner.wins} victorias totales` }],
       },
       {
         key: "chinchones",
@@ -2058,110 +2395,104 @@ return (
         subtitle: "Reconocimiento + 2 pts",
         emoji: "✨",
         accent: "#a78bfa",
-        winner: chinchonAwardWinner,
-        detail: (winner) => `${winner.chinchones} chinchones`,
+        winners: [{ idx: chinchonAwardWinner.idx, detail: `${chinchonAwardWinner.chinchones} chinchones` }],
       },
       {
         key: "mirror",
-        title: "Mas Letal",
+        title: "Más Letal",
         subtitle: "4 pts al primero, 2 pts al segundo",
         emoji: "⚔️",
         accent: "#f87171",
-        winner: mirrorAwardWinner,
-        detail: (winner) => `${winner.mirrorWins} espejos ganados`,
+        winners: [{ idx: mirrorAwardWinner.idx, detail: `${mirrorAwardWinner.mirrorWins} espejos ganados` }],
       },
       beatAllAwardWinner ? {
         key: "beat-all",
-        title: "Aquel que le gano a todos",
+        title: "Aquel que le ganó a todos",
         subtitle: "Reconocimiento + 2 pts",
         emoji: "🧨",
         accent: "#34d399",
-        winner: beatAllAwardWinner,
-        detail: () => "Gano su head-to-head contra todos",
+        winners: [{ idx: beatAllAwardWinner.idx, detail: "Ganó su head-to-head contra todos" }],
       } : null,
+    ].filter(Boolean);
+    const badAwardCards = [
+      lostToEveryoneAward ? {
+        key: "lost-all",
+        title: "Bolsa de boxeo",
+        subtitle: "La gastada oficial del torneo",
+        emoji: "🥊",
+        accent: "#fb7185",
+        winners: [{ idx: lostToEveryoneAward.idx, detail: "Perdió contra todos" }],
+      } : null,
+      noRiskBots.length > 0 ? {
+        key: "no-risk",
+        title: "No se arriesga",
+        subtitle: "Terminó con 0 chinchones",
+        emoji: "🧱",
+        accent: "#f87171",
+        winners: noRiskBots.map((entry) => ({ idx: entry.idx, detail: "0 chinchones en todo el torneo" })),
+      } : null,
+      everyoneShouldWinPrizeBots.length > 0 ? {
+        key: "participation",
+        title: "Todos deberían ganar un premio",
+        subtitle: "No ligó ni una buena ni una mala mención",
+        emoji: "🪑",
+        accent: "#ef4444",
+        winners: everyoneShouldWinPrizeBots.map((entry) => ({ idx: entry.idx, detail: "Pasó desapercibido" })),
+      } : null,
+    ].filter(Boolean);
+    const ceremonyRunnerUp = ceremonyRanking[1] ?? null;
+    const championReasonItems = [
+      ceremonyChampion.winsPoints > 0 ? `Se quedó con Mayor ganador (+${ceremonyChampion.winsPoints}).` : null,
+      ceremonyChampion.mirrorPoints > 0
+        ? `${ceremonyChampion.wonMasLetal ? "Ganó" : "Sumó desde"} Más Letal (+${ceremonyChampion.mirrorPoints}).`
+        : null,
+      ceremonyChampion.auraPoints > 0 ? `Farmeó aura con ${botTotals[ceremonyChampion.idx].chinchones} chinchones (+${ceremonyChampion.auraPoints}).` : null,
+      ceremonyChampion.beatAllPoints > 0 ? `Ganó el grupo completo en los cruces directos (+${ceremonyChampion.beatAllPoints}).` : null,
+      ceremonyRunnerUp && ceremonyRunnerUp.score === ceremonyChampion.score
+        ? `Desempató por el duelo directo ante ${BOT[tourBots[ceremonyRunnerUp.idx]].emoji} ${BOT[tourBots[ceremonyRunnerUp.idx]].name}.`
+        : null,
     ].filter(Boolean);
 
     return (
-      <div className="flex flex-col items-center w-full max-w-2xl">
+      <LabPanel
+        title="Torneo"
+        subtitle="Fixture por fechas, resultados parciales en vivo y ceremonia final cuando termina todo el grupo."
+      >
+      <div className="lab-workspace">
         <h2 className="text-sm font-semibold text-gray-200 mb-1">Torneo todos contra todos</h2>
         <p className="text-xs text-gray-600 mb-4 text-center">3 fechas estilo fase de grupos FIFA · 6 enfrentamientos para encontrar al mejor bot</p>
 
-        {/* Bot selection 2×2 */}
-        <div className="grid grid-cols-2 gap-2 w-full mb-4">
-          {[0, 1, 2, 3].map(slot => {
-            return (
-              <div key={slot} className="bg-gray-900 rounded-lg p-2.5 border border-gray-800">
-                <div className="text-xs text-gray-500 mb-1.5">Bot {slot + 1}</div>
-                <div className="flex flex-wrap gap-1">
-                  {BOT.map((b, bi) => {
-                    const taken = tourBots.some((tb, s) => s !== slot && tb === bi);
-                    return (
-                      <button key={bi} disabled={taken || tourRunning}
-                        onClick={() => {
-                          if (tourBots[slot] === bi) return;
-                          resetTournamentState();
-                          setTourBots(prev => { const next = [...prev]; next[slot] = bi; return next; });
-                        }}
-                        className={`px-2 py-1 rounded text-xs border transition-all disabled:cursor-not-allowed ${tourBots[slot] === bi ? "border-2 scale-105" : `border-gray-700 ${taken ? "opacity-20" : "hover:border-gray-500"}`}`}
-                        style={tourBots[slot] === bi ? { borderColor: b.color, color: b.color, background: `${b.color}15` } : { color: taken ? "#333" : b.color }}>
-                        {b.emoji} {b.name}
-                      </button>
-                    );
-                  })}
-                </div>
-              </div>
-            );
-          })}
+        <div className="lab-config-grid mb-4 w-full">
+          <BotLineupPicker
+            title="Armá el grupo"
+            subtitle="Una sola lista con 4 cupos. Tocá un cupo arriba y luego el bot que querés asignar."
+            labels={["Bot 1", "Bot 2", "Bot 3", "Bot 4"]}
+            values={tourBots}
+            onChange={(next) => { resetTournamentState(); setTourBots(next); }}
+            disabled={tourRunning}
+          />
+          <SimulationCountPicker
+            label="Simulaciones por cruce"
+            value={numSims}
+            onChange={setNumSims}
+            disabled={tourRunning}
+            tone="amber"
+            useStabilized={tourUseStabilized}
+            onUseStabilizedChange={setTourUseStabilized}
+            stabilizeDecimals={tourStabilizeDecimals}
+            onStabilizeDecimalsChange={setTourStabilizeDecimals}
+            stabilizedCopy={`Cada cruce se corta solo si el winrate truncado a ${tourStabilizeDecimals} ${tourStabilizeDecimals === 1 ? "decimal" : "decimales"} no cambia durante ${STABLE_SIMULATION_STREAK} simulaciones seguidas.`}
+          />
         </div>
 
-        {/* Selected bots summary */}
-        <div className="flex gap-2 flex-wrap justify-center mb-4">
-          {[0, 1, 2, 3].map(slot => {
-            const b = BOT[tourBots[slot]];
-            return (
-              <div key={slot} className="text-xs px-2.5 py-1 rounded-full border" style={{ borderColor: b.color + "60", color: b.color }}>
-                {b.emoji} {b.name}
-              </div>
-            );
-          })}
-        </div>
-
-        {/* Stabilization config */}
-        <div className="w-full bg-gray-800 rounded-lg p-3 border border-gray-700 mb-4">
-          <label className="flex items-center gap-2 cursor-pointer mb-2">
-            <input type="checkbox" checked={tourUseStabilized} onChange={(e) => setTourUseStabilized(e.target.checked)} disabled={tourRunning}
-              className="w-4 h-4 rounded cursor-pointer" />
-            <span className="text-xs text-gray-400">Modo estabilizado</span>
-          </label>
-          {tourUseStabilized && (
-            <div className="flex gap-3 flex-wrap text-xs">
-              <div>
-                <label className="text-gray-500 block mb-1">Decimales de precisión</label>
-                <select value={tourStabilizeDecimals} onChange={(e) => setTourStabilizeDecimals(Number(e.target.value))} disabled={tourRunning}
-                  className="bg-gray-900 border border-gray-600 rounded px-2 py-1 text-gray-200 text-xs">
-                  {[0, 1, 2, 3].map(d => <option key={d} value={d}>{d}</option>)}
-                </select>
-              </div>
-              <p className="text-[11px] leading-snug text-gray-500 max-w-xs">
-                Corta cuando los winrates truncados no cambian durante {STABLE_SIMULATION_STREAK} simulaciones seguidas.
-              </p>
-            </div>
-          )}
-          <div className="mt-3 pt-3 border-t border-gray-700">
-            <label className="text-gray-500 text-xs block mb-2">Simulaciones por enfrentamiento</label>
-            <div className="flex flex-wrap gap-1">
-              {[10, 50, 100, 500, 1000, 5000, 10000].map(n => (
-                <button key={n} onClick={() => setNumSims(n)} disabled={tourRunning}
-                  className={`px-2.5 py-1 rounded-md text-xs font-medium border transition-all disabled:opacity-40
-                    ${numSims === n ? "border-amber-500 text-amber-400 bg-amber-500/10" : "border-gray-700 text-gray-400 hover:border-gray-500"}`}>
-                  {n >= 1000 ? `${n / 1000}k` : n}
-                </button>
-              ))}
-            </div>
-          </div>
+        <div className="lab-note-card mb-4">
+          <p className="text-center">
+            Cada fecha juega sus cruces con el mismo reglamento, y el modo estabilizado corta antes si el resultado ya quedó planchado.
+          </p>
         </div>
 
         {/* Start/Stop */}
+        <StickyActionBar>
         {!tourRunning ? (
           <button onClick={runTournament}
             className="bg-amber-600 hover:bg-amber-500 text-white px-6 py-2 rounded-lg text-sm font-bold mb-3 active:scale-95 transition-all">
@@ -2173,6 +2504,7 @@ return (
             Parar ({tourProgress}%)
           </button>
         )}
+        </StickyActionBar>
 
         {/* Progress bar */}
         {(tourRunning || (tourProgress > 0 && tourProgress < 100)) && (
@@ -2184,7 +2516,7 @@ return (
 
         {/* Current matchup status */}
         {tourRunning && tourCurrentMatch && (
-          <div className="text-xs text-gray-500 mb-3 text-center">
+          <div className="lab-copy-note mb-3 text-center">
             Corriendo Fecha {tourCurrentMatch.fechaIndex + 1} · Partido {tourCurrentMatch.matchIndex + 1}:{" "}
             <span style={{ color: BOT[tourBots[tourCurrentMatch.aSlot]].color }}>
               {BOT[tourBots[tourCurrentMatch.aSlot]].emoji} {BOT[tourBots[tourCurrentMatch.aSlot]].name}
@@ -2251,16 +2583,18 @@ return (
         )}
 
         <div className="w-full flex justify-center mb-4">
-          <div className="flex gap-0.5 bg-gray-900 rounded-lg p-0.5 border border-gray-800">
+          <div className="lab-segmented">
             <button
               onClick={() => setTourSection("fixture")}
-              className={`px-3 py-1 rounded-md text-xs font-medium transition-colors ${tourSection === "fixture" ? "bg-gray-700 text-white" : "text-gray-500 hover:text-gray-300"}`}
+              aria-pressed={tourSection === "fixture"}
+              className="lab-segmented__button"
             >
               Fixture
             </button>
             <button
               onClick={() => setTourSection("results")}
-              className={`px-3 py-1 rounded-md text-xs font-medium transition-colors ${tourSection === "results" ? "bg-gray-700 text-white" : "text-gray-500 hover:text-gray-300"}`}
+              aria-pressed={tourSection === "results"}
+              className="lab-segmented__button"
             >
               Resultados
             </button>
@@ -2363,10 +2697,10 @@ return (
               </div>
             ))}
             <div className="w-full bg-gray-900 border border-gray-800 rounded-xl p-4 text-center">
-              <div className="text-xs text-gray-500 mb-3">
+              <div className="lab-copy-note mb-3">
                 {isDone
                   ? "Ya terminaron todas las fechas. Podés pasar a la parte de resultados."
-                  : "El boton de resultados se habilita cuando terminen todas las fechas."}
+                  : "El botón de resultados se habilita cuando terminen todas las fechas."}
               </div>
               <button
                 onClick={() => setTourSection("results")}
@@ -2384,19 +2718,21 @@ return (
         )}
 
         {tourSection === "results" && (
-          tourResults ? (
+          hasTournamentResults ? (
             <>
               <div className="w-full flex justify-center mb-3">
-                <div className="flex gap-0.5 bg-gray-900 rounded-lg p-0.5 border border-gray-800">
+                <div className="lab-segmented">
                   <button
                     onClick={() => setTourMatrixView("percent")}
-                    className={`px-3 py-1 rounded-md text-xs font-medium transition-colors ${tourMatrixView === "percent" ? "bg-gray-700 text-white" : "text-gray-500 hover:text-gray-300"}`}
+                    aria-pressed={tourMatrixView === "percent"}
+                    className="lab-segmented__button"
                   >
                     Ver %
                   </button>
                   <button
                     onClick={() => setTourMatrixView("absolute")}
-                    className={`px-3 py-1 rounded-md text-xs font-medium transition-colors ${tourMatrixView === "absolute" ? "bg-gray-700 text-white" : "text-gray-500 hover:text-gray-300"}`}
+                    aria-pressed={tourMatrixView === "absolute"}
+                    className="lab-segmented__button"
                   >
                     Ver absolutos
                   </button>
@@ -2433,8 +2769,8 @@ return (
                             if (j === ai) return <td key={j} className="text-center text-gray-700 py-2">—</td>;
                             const low = Math.min(ai, j);
                             const high = Math.max(ai, j);
-                            const g = tourResults.games[low][high];
-                            const w = ai < j ? tourResults.wins[ai][j] : g - tourResults.wins[j][ai];
+                            const g = safeTourResults.games[low][high];
+                            const w = ai < j ? safeTourResults.wins[ai][j] : g - safeTourResults.wins[j][ai];
                             if (g === 0) return <td key={j} className="text-center text-gray-600 py-2">...</td>;
                             const pct = (w / g) * 100;
                             const col = pct >= 55 ? "#22c55e" : pct >= 47 ? "#9ca3af" : "#f87171";
@@ -2482,8 +2818,8 @@ return (
                           <td className="py-2 pr-3 font-medium" style={{ color: b.color }}>{b.emoji} {b.name}</td>
                           {slots.map(j => {
                             if (j === ai) return <td key={j} className="text-center text-gray-700 py-2">—</td>;
-                            const p = ai < j ? tourResults.mirrorPairs[ai][j] : tourResults.mirrorPairs[j][ai];
-                            const w = tourResults.mirrorWins[ai][j];
+                            const p = ai < j ? safeTourResults.mirrorPairs[ai][j] : safeTourResults.mirrorPairs[j][ai];
+                            const w = safeTourResults.mirrorWins[ai][j];
                             if (p === 0) return <td key={j} className="text-center text-gray-600 py-2">...</td>;
                             const pct = (w / p) * 100;
                             return (
@@ -2507,123 +2843,140 @@ return (
               {/* Ranking / Podium */}
               <div className="w-full bg-gray-900 border border-gray-800 rounded-xl p-4">
                 {isDone && (
-                  <div className="mb-5 rounded-2xl border border-amber-700/40 bg-gradient-to-b from-amber-500/10 via-gray-900 to-gray-950 p-4">
-                    <div className="text-center mb-4">
-                      <div className="text-[11px] text-amber-300 uppercase tracking-[0.2em] mb-1">Ceremonia de premios</div>
-                      <div className="text-sm font-semibold text-gray-100">El torneo termino y cada bot recibe lo que se gano</div>
-                      <div className="text-xs text-gray-500 mt-1">El campeon final sale de combinar todas las metricas buenas del torneo.</div>
+                  <div className="lab-ceremony mb-5">
+                    <div className="text-center">
+                      <div className="text-[11px] text-amber-300 uppercase tracking-[0.2em] mb-1">🎖️ Ceremonia de premios</div>
+                      <div className="text-sm font-semibold text-gray-100">El torneo terminó y ahora toca repartir flores, ladrillos y la corona.</div>
+                      <div className="text-xs text-gray-500 mt-1">Primero la gastada, después los aplausos y al final el campeón con sus motivos.</div>
                     </div>
-                    <div className={`grid gap-3 mb-4 ${awardCards.length >= 4 ? "sm:grid-cols-2" : "sm:grid-cols-3"}`}>
-                      {awardCards.map((award) => {
-                        const bot = BOT[tourBots[award.winner.idx]];
-                        return (
-                          <div key={award.key} className="rounded-2xl border border-gray-800 bg-gray-950/80 p-3">
-                            <div className="flex items-start justify-between gap-3">
+
+                    <section className="lab-ceremony-section lab-ceremony-section--bad">
+                      <div className="lab-ceremony-section__head">
+                        <div>
+                          <div className="lab-ceremony-section__eyebrow text-rose-300">Premios malos</div>
+                          <h4 className="lab-ceremony-section__title">La parte donde el torneo se pone mala leche</h4>
+                        </div>
+                        <div className="lab-ceremony-section__emoji">🚨</div>
+                      </div>
+                      {badAwardCards.length > 0 ? (
+                        <div className="lab-ceremony-grid">
+                          {badAwardCards.map((award) => (
+                            <div key={award.key} className="lab-ceremony-award lab-ceremony-award--bad">
+                              <div className="lab-ceremony-award__head">
+                                <div>
+                                  <div className="lab-ceremony-award__eyebrow" style={{ color: award.accent }}>{award.title}</div>
+                                  <div className="lab-ceremony-award__subtitle">{award.subtitle}</div>
+                                </div>
+                                <div className="lab-ceremony-award__emoji">{award.emoji}</div>
+                              </div>
+                              <div className="lab-ceremony-award__stack">
+                                {award.winners.map((winner) => {
+                                  const bot = BOT[tourBots[winner.idx]];
+                                  return (
+                                    <div key={`${award.key}-${winner.idx}`} className="lab-ceremony-award__winner lab-ceremony-award__winner--bad">
+                                      <div className="text-lg leading-none mb-1">{bot.emoji}</div>
+                                      <div className="text-sm font-bold" style={{ color: bot.color }}>{bot.name}</div>
+                                      <div className="text-xs text-gray-300 mt-1">{winner.detail}</div>
+                                    </div>
+                                  );
+                                })}
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      ) : (
+                        <div className="lab-ceremony-empty lab-ceremony-empty--bad">No hubo papelones esta vez.</div>
+                      )}
+                    </section>
+
+                    <section className="lab-ceremony-section lab-ceremony-section--good">
+                      <div className="lab-ceremony-section__head">
+                        <div>
+                          <div className="lab-ceremony-section__eyebrow text-emerald-300">Premios buenos</div>
+                          <h4 className="lab-ceremony-section__title">Los que sí se ganaron algo para mostrar</h4>
+                        </div>
+                        <div className="lab-ceremony-section__emoji">🏅</div>
+                      </div>
+                      <div className="lab-ceremony-grid">
+                        {goodAwardCards.map((award) => (
+                          <div key={award.key} className="lab-ceremony-award lab-ceremony-award--good">
+                            <div className="lab-ceremony-award__head">
                               <div>
-                                <div className="text-[11px] uppercase tracking-[0.18em]" style={{ color: award.accent }}>{award.title}</div>
-                                <div className="text-xs text-gray-500 mt-1">{award.subtitle}</div>
+                                <div className="lab-ceremony-award__eyebrow" style={{ color: award.accent }}>{award.title}</div>
+                                <div className="lab-ceremony-award__subtitle">{award.subtitle}</div>
                               </div>
-                              <div className="text-2xl">{award.emoji}</div>
+                              <div className="lab-ceremony-award__emoji">{award.emoji}</div>
                             </div>
-                            <div className="mt-3 rounded-xl border border-gray-800 bg-gray-900/80 p-3">
-                              <div className="text-lg leading-none mb-1">{bot.emoji}</div>
-                              <div className="text-sm font-bold" style={{ color: bot.color }}>{bot.name}</div>
-                              <div className="text-xs text-gray-400 mt-1">{award.detail(award.winner)}</div>
+                            <div className="lab-ceremony-award__stack">
+                              {award.winners.map((winner) => {
+                                const bot = BOT[tourBots[winner.idx]];
+                                return (
+                                  <div key={`${award.key}-${winner.idx}`} className="lab-ceremony-award__winner">
+                                    <div className="text-lg leading-none mb-1">{bot.emoji}</div>
+                                    <div className="text-sm font-bold" style={{ color: bot.color }}>{bot.name}</div>
+                                    <div className="text-xs text-gray-400 mt-1">{winner.detail}</div>
+                                  </div>
+                                );
+                              })}
                             </div>
                           </div>
-                        );
-                      })}
-                    </div>
-                    <div className="grid sm:grid-cols-2 gap-3 mb-4">
-                      {extraAwardCards.map((award) => {
-                        const bot = BOT[tourBots[award.winner.idx]];
-                        return (
-                          <div key={award.key} className="rounded-xl border border-gray-800 bg-gray-950/60 p-3">
-                            <div className="flex items-center justify-between gap-3">
-                              <div>
-                                <div className="text-[11px] uppercase tracking-[0.18em]" style={{ color: award.accent }}>{award.title}</div>
-                                <div className="text-xs text-gray-500 mt-1">{award.subtitle}</div>
-                              </div>
-                              <div className="text-xl">{award.emoji}</div>
+                        ))}
+                      </div>
+                    </section>
+
+                    <section className="lab-ceremony-section lab-ceremony-section--champion">
+                      <div className="lab-ceremony-section__head">
+                        <div>
+                          <div className="lab-ceremony-section__eyebrow text-amber-300">Ganador y por qué</div>
+                          <h4 className="lab-ceremony-section__title">La corona queda en manos de quien más convirtió premios en puntos</h4>
+                        </div>
+                        <div className="lab-ceremony-section__emoji">👑</div>
+                      </div>
+                      <div className="lab-ceremony-champion">
+                        <div className="text-base font-extrabold" style={{ color: BOT[tourBots[ceremonyChampion.idx]].color }}>
+                          {BOT[tourBots[ceremonyChampion.idx]].emoji} {BOT[tourBots[ceremonyChampion.idx]].name}
+                        </div>
+                        <div className="text-xs text-gray-400 mt-1">
+                          Se lleva el título por sumar más puntos de premios. Si dos bots empatan, primero manda el duelo directo entre ellos.
+                        </div>
+                        <div className="lab-ceremony-points">
+                          <div className="lab-ceremony-points__item">
+                            <div className="text-gray-500">Mayor ganador</div>
+                            <div className="font-mono mt-1" style={{ color: BOT[tourBots[ceremonyChampion.idx]].color }}>
+                              {ceremonyChampion.winsPoints > 0 ? `+${ceremonyChampion.winsPoints}` : "0"}
                             </div>
-                            <div className="mt-2 text-sm font-semibold" style={{ color: bot.color }}>{bot.emoji} {bot.name}</div>
-                            <div className="text-xs text-gray-400 mt-1">{award.detail(award.winner)}</div>
                           </div>
-                        );
-                      })}
-                    </div>
-                    {noRiskBots.length > 0 && (
-                      <div className="mb-4 rounded-xl border border-slate-800 bg-slate-950/40 px-3 py-3">
-                        <div className="flex items-center justify-between gap-3">
-                          <div>
-                            <div className="text-[11px] uppercase tracking-[0.18em] text-slate-300">No se arriesga</div>
-                            <div className="text-xs text-gray-500 mt-1">Bots que terminaron el torneo con 0 chinchones.</div>
+                          <div className="lab-ceremony-points__item">
+                            <div className="text-gray-500">Aura</div>
+                            <div className="font-mono mt-1" style={{ color: BOT[tourBots[ceremonyChampion.idx]].color }}>
+                              {ceremonyChampion.auraPoints > 0 ? `+${ceremonyChampion.auraPoints}` : "0"}
+                            </div>
                           </div>
-                          <div className="text-xl">🧱</div>
-                        </div>
-                        <div className="flex flex-wrap gap-2 mt-3">
-                          {noRiskBots.map((entry) => {
-                            const bot = BOT[tourBots[entry.idx]];
-                            return (
-                              <div key={entry.idx} className="rounded-full border border-gray-800 bg-gray-900/80 px-3 py-1.5 text-xs">
-                                <span style={{ color: bot.color }}>{bot.emoji} {bot.name}</span>
-                                <span className="text-gray-500"> · 0 chinchones</span>
-                              </div>
-                            );
-                          })}
-                        </div>
-                      </div>
-                    )}
-                    {lostToEveryoneAward && (
-                      <div className="mb-4 rounded-xl border border-rose-900/60 bg-rose-950/20 px-3 py-3 text-center">
-                        <div className="text-[11px] text-rose-300 uppercase tracking-[0.18em] mb-1">Bolsa de boxeo</div>
-                        <div className="text-sm text-gray-200">
-                          💀 Perdio contra todos y termino como sparring oficial del torneo:{" "}
-                          <span style={{ color: BOT[tourBots[lostToEveryoneAward.idx]].color }}>
-                            {BOT[tourBots[lostToEveryoneAward.idx]].emoji} {BOT[tourBots[lostToEveryoneAward.idx]].name}
-                          </span>
-                        </div>
-                        <div className="text-xs text-rose-200/70 mt-1">No suma puntos. Solo queda la gastada para la posteridad.</div>
-                      </div>
-                    )}
-                    <div className="mt-3 rounded-2xl border border-amber-500/40 bg-gradient-to-r from-amber-500/10 via-gray-950 to-emerald-500/10 px-4 py-4 text-center">
-                      <div className="text-[11px] text-gray-500 uppercase tracking-[0.2em] mb-1">Campeon absoluto</div>
-                      <div className="text-base font-extrabold" style={{ color: BOT[tourBots[ceremonyChampion.idx]].color }}>
-                        {BOT[tourBots[ceremonyChampion.idx]].emoji} {BOT[tourBots[ceremonyChampion.idx]].name}
-                      </div>
-                      <div className="text-xs text-gray-500 mt-1">
-                        Se lleva el titulo por sumar mas puntos de premios. Si hay empate, desempatan victorias totales, espejo y chinchones.
-                      </div>
-                      <div className="grid sm:grid-cols-4 gap-2 mt-3 text-xs">
-                        <div className="rounded-lg border border-gray-800 bg-gray-950/70 p-2">
-                          <div className="text-gray-500">Mayor ganador</div>
-                          <div className="font-mono mt-1" style={{ color: BOT[tourBots[ceremonyChampion.idx]].color }}>
-                            {ceremonyChampion.winsPoints > 0 ? `+${ceremonyChampion.winsPoints}` : "0"}
+                          <div className="lab-ceremony-points__item">
+                            <div className="text-gray-500">Letalidad</div>
+                            <div className="font-mono mt-1" style={{ color: BOT[tourBots[ceremonyChampion.idx]].color }}>
+                              {ceremonyChampion.mirrorPoints > 0 ? `+${ceremonyChampion.mirrorPoints}` : "0"}
+                            </div>
+                          </div>
+                          <div className="lab-ceremony-points__item">
+                            <div className="text-gray-500">Le ganó a todos</div>
+                            <div className="font-mono mt-1" style={{ color: BOT[tourBots[ceremonyChampion.idx]].color }}>
+                              {ceremonyChampion.beatAllPoints > 0 ? `+${ceremonyChampion.beatAllPoints}` : "0"}
+                            </div>
                           </div>
                         </div>
-                        <div className="rounded-lg border border-gray-800 bg-gray-950/70 p-2">
-                          <div className="text-gray-500">Aura</div>
-                          <div className="font-mono mt-1" style={{ color: BOT[tourBots[ceremonyChampion.idx]].color }}>
-                            {ceremonyChampion.auraPoints > 0 ? `+${ceremonyChampion.auraPoints}` : "0"}
-                          </div>
+                        <div className="lab-ceremony-reasons">
+                          {championReasonItems.map((reason) => (
+                            <div key={reason} className="lab-ceremony-reasons__item">
+                              {reason}
+                            </div>
+                          ))}
                         </div>
-                        <div className="rounded-lg border border-gray-800 bg-gray-950/70 p-2">
-                          <div className="text-gray-500">Letalidad</div>
-                          <div className="font-mono mt-1" style={{ color: BOT[tourBots[ceremonyChampion.idx]].color }}>
-                            {ceremonyChampion.mirrorPoints > 0 ? `+${ceremonyChampion.mirrorPoints}` : "0"}
-                          </div>
-                        </div>
-                        <div className="rounded-lg border border-gray-800 bg-gray-950/70 p-2">
-                          <div className="text-gray-500">Le gano a todos</div>
-                          <div className="font-mono mt-1" style={{ color: BOT[tourBots[ceremonyChampion.idx]].color }}>
-                            {ceremonyChampion.beatAllPoints > 0 ? `+${ceremonyChampion.beatAllPoints}` : "0"}
-                          </div>
+                        <div className="text-xs text-gray-400">
+                          Puntaje total del campeón: <span className="font-mono" style={{ color: BOT[tourBots[ceremonyChampion.idx]].color }}>{ceremonyChampion.score}</span>
                         </div>
                       </div>
-                      <div className="text-xs text-gray-400 mt-3">
-                        Puntaje total del campeon: <span className="font-mono" style={{ color: BOT[tourBots[ceremonyChampion.idx]].color }}>{ceremonyChampion.score}</span>
-                      </div>
-                    </div>
+                    </section>
                   </div>
                 )}
                 <h3 className="text-xs text-gray-500 uppercase tracking-wider mb-3 text-center">
@@ -2638,7 +2991,7 @@ return (
                         <th className="text-center px-2 py-1 text-gray-500 font-normal">Mayor</th>
                         <th className="text-center px-2 py-1 text-gray-500 font-normal">Letal</th>
                         <th className="text-center px-2 py-1 text-gray-500 font-normal">Aura</th>
-                        <th className="text-center px-2 py-1 text-gray-500 font-normal">Le gano a todos</th>
+                        <th className="text-center px-2 py-1 text-gray-500 font-normal">Le ganó a todos</th>
                         <th className="text-center px-2 py-1 text-gray-300 font-medium">Total</th>
                       </tr>
                     </thead>
@@ -2739,93 +3092,106 @@ return (
             </>
           ) : (
             <div className="w-full bg-gray-900 border border-gray-800 rounded-xl p-5 text-center text-sm text-gray-500 mb-4">
-              Iniciá el torneo para ver matrices, ranking y resultados acumulados.
+              Todavía no hay resultados listos para mostrar. Terminá el torneo o dejá que llegue el próximo snapshot antes de pasar a esta vista.
             </div>
           )
         )}
       </div>
+      </LabPanel>
     );
   })()}
 
   {/* --- REGLAS --- */}
   {tab === "reglas" && (
-    <div className="w-full max-w-lg">
-      <div className="bg-gray-900 border border-gray-800 rounded-xl p-5 text-sm leading-relaxed">
-        <h2 className="text-base font-bold text-gray-100 mb-4">Reglas oficiales — Chinchón (variante argentina)</h2>
-
-        <div className="mb-4">
-          <h3 className="text-xs font-bold text-amber-400 uppercase tracking-wider mb-2">Mazo</h3>
-          <ul className="text-gray-300 space-y-1 list-disc list-inside">
-            <li>Se juega con <span className="text-white font-medium">50 cartas</span> (incluye 2 comodines).</li>
-          </ul>
+    <LabPanel>
+    <div className="lab-workspace lab-workspace--prose">
+      <section className="lab-rules" aria-label="Reglas oficiales de Chinchón">
+        <div className="lab-rules__intro">
+          <div className="lab-rules__eyebrow">🇦🇷 Variante argentina</div>
+          <h2 className="lab-rules__title">Las reglas que usan la simulación, el torneo y el modo práctica.</h2>
+          <p className="lab-rules__copy">
+            Todo el lab corre con esta misma base: misma baraja, mismo corte y la misma lógica de chinchón para comparar bots y revisar jugadas.
+          </p>
+          <div className="lab-rules__facts">
+            {RULE_FACTS.map((fact) => (
+              <span key={fact} className="lab-rules__fact">{fact}</span>
+            ))}
+          </div>
         </div>
 
-        <div className="mb-4">
-          <h3 className="text-xs font-bold text-amber-400 uppercase tracking-wider mb-2">Reparto inicial</h3>
-          <ul className="text-gray-300 space-y-1 list-disc list-inside">
-            <li>Se reparten <span className="text-white font-medium">7 cartas por jugador</span>.</li>
-            <li>El jugador que empieza recibe <span className="text-white font-medium">8 cartas</span> y arranca descartando 1.</li>
-          </ul>
+        <div className="lab-rules__spotlight">
+          <div className="lab-rules__spotlight-card is-good">
+            <span className="lab-rules__spotlight-icon" aria-hidden="true">🏆</span>
+            <div>
+              <h3>Chinchón puro</h3>
+              <p>7 cartas consecutivas del mismo palo, sin comodines. Si lo hacés, ganás la partida al instante.</p>
+            </div>
+          </div>
+          <div className="lab-rules__spotlight-card is-warn">
+            <span className="lab-rules__spotlight-icon" aria-hidden="true">🤡</span>
+            <div>
+              <h3>Comodín con costo</h3>
+              <p>No se puede tirar nunca, y si queda suelto fuera de melds suma 50 puntos en contra.</p>
+            </div>
+          </div>
         </div>
 
-        <div className="mb-4">
-          <h3 className="text-xs font-bold text-amber-400 uppercase tracking-wider mb-2">Turno</h3>
-          <ul className="text-gray-300 space-y-1 list-disc list-inside">
-            <li>En cada turno, el jugador roba <span className="text-white font-medium">1 carta</span> del mazo o del descarte.</li>
-            <li>Luego descarta <span className="text-white font-medium">1 carta</span>.</li>
-            <li>El comodín <span className="text-red-400 font-medium">no puede descartarse nunca</span>.</li>
-          </ul>
+        <div className="lab-rules__grid">
+          {RULE_SECTIONS.map((section) => (
+            <article
+              key={section.key}
+              className="lab-rules__card"
+              style={{ "--rules-accent": section.accent }}
+            >
+              <div className="lab-rules__card-head">
+                <span className="lab-rules__icon" aria-hidden="true">{section.emoji}</span>
+                <div>
+                  <h3>{section.title}</h3>
+                  <p>{section.summary}</p>
+                </div>
+              </div>
+              <ul className="lab-rules__list">
+                {section.items.map((item) => (
+                  <li key={item}>{item}</li>
+                ))}
+              </ul>
+            </article>
+          ))}
         </div>
 
-        <div className="mb-4">
-          <h3 className="text-xs font-bold text-amber-400 uppercase tracking-wider mb-2">Juegos válidos</h3>
-          <ul className="text-gray-300 space-y-1 list-disc list-inside">
-            <li><span className="text-white font-medium">Escalera</span>: 3 o más cartas consecutivas del mismo palo.</li>
-            <li><span className="text-white font-medium">Grupo</span>: 3 o más cartas del mismo número.</li>
-            <li>Todo juego válido debe tener al menos <span className="text-white font-medium">3 cartas</span>.</li>
-          </ul>
+        <div className="lab-rules__about">
+          <div className="lab-rules__about-eyebrow">🇦🇷 Hecho en Argentina</div>
+          <div className="lab-rules__about-head">
+            <span className="lab-rules__about-icon" aria-hidden="true">🧪</span>
+            <div>
+              <h3>Chinchón Lab existe para mezclar estrategia, barajas y un poco de aura.</h3>
+              <p>
+                La app la hizo{" "}
+                <a
+                  className="lab-rules__about-link"
+                  href="https://github.com/facundoraulbistolfi"
+                  target="_blank"
+                  rel="noreferrer"
+                >
+                  Facundo Bistolfi
+                </a>{" "}
+                con ayuda de Claude y Codex, entre pruebas espejo, torneos raros y bastante curiosidad por ver qué decisiones terminan jugando mejor.
+              </p>
+            </div>
+          </div>
         </div>
-
-        <div className="mb-4">
-          <h3 className="text-xs font-bold text-amber-400 uppercase tracking-wider mb-2">Corte</h3>
-          <ul className="text-gray-300 space-y-1 list-disc list-inside">
-            <li>Se puede cortar solo si hay como máximo <span className="text-white font-medium">1 carta sobrante</span>.</li>
-            <li>El valor total del resto no debe superar <span className="text-white font-medium">5 puntos</span>.</li>
-            <li>El comodín <span className="text-red-400 font-medium">no puede ser la carta que se tira</span> para cortar.</li>
-          </ul>
-        </div>
-
-        <div className="mb-4">
-          <h3 className="text-xs font-bold text-amber-400 uppercase tracking-wider mb-2">Comodines</h3>
-          <ul className="text-gray-300 space-y-1 list-disc list-inside">
-            <li>El comodín nunca se puede tirar (ni para descartar ni para cortar).</li>
-            <li>Un comodín que no forma parte de ningún juego cerrado vale <span className="text-red-400 font-medium">50 puntos en contra</span>.</li>
-          </ul>
-        </div>
-
-        <div className="mb-4">
-          <h3 className="text-xs font-bold text-amber-400 uppercase tracking-wider mb-2">Chinchón</h3>
-          <ul className="text-gray-300 space-y-1 list-disc list-inside">
-            <li>El chinchón solo vale como chinchón si está hecho <span className="text-white font-medium">sin comodines</span>: 7 cartas consecutivas del mismo palo.</li>
-            <li>Chinchón = <span className="text-emerald-400 font-medium">victoria instantánea de la partida</span>.</li>
-            <li>Si las 7 cartas forman una corrida <span className="text-yellow-400">usando comodín</span>: vale <span className="text-white font-medium">−10 puntos</span>, no gana automáticamente.</li>
-          </ul>
-        </div>
-
-        <div className="mb-2">
-          <h3 className="text-xs font-bold text-amber-400 uppercase tracking-wider mb-2">Puntaje y eliminación</h3>
-          <ul className="text-gray-300 space-y-1 list-disc list-inside">
-            <li>La partida es a <span className="text-white font-medium">100 puntos</span>.</li>
-            <li>Un jugador queda eliminado al llegar a <span className="text-red-400 font-medium">100 puntos o más</span>.</li>
-          </ul>
-        </div>
-      </div>
+      </section>
     </div>
+    </LabPanel>
   )}
 
   {/* --- BOTS --- */}
   {tab === "custom" && (
-    <div className="flex flex-col items-center w-full max-w-lg">
+    <LabPanel
+      title="Bots"
+      subtitle="Tus bots custom primero, persistencia local automática e importación/exportación desde el navegador."
+    >
+    <div className="lab-workspace">
       {viewingBot ? (
         <BotViewer config={viewingBot} onClose={() => setViewingBot(null)} />
       ) : editingBot ? (
@@ -2839,138 +3205,253 @@ return (
           setEditingBot(null);
         }} />
       ) : (
-        <div className="w-full">
-          {/* Header with description/config toggle */}
-          <div className="flex items-center justify-between mb-4">
-            <p className="text-gray-400 text-sm">Todos los bots</p>
-            <button onClick={() => setShowDescMode(m => m === "desc" ? "config" : "desc")}
-              className="text-xs text-gray-500 hover:text-gray-300 bg-gray-800 px-2.5 py-1 rounded border border-gray-700 hover:border-gray-600 transition-colors">
-              {showDescMode === "desc" ? "Ver resumen config" : "Ver descripción"}
-            </button>
-          </div>
+        <div className="lab-bots">
+          <section className="lab-bots__intro">
+            <div className="lab-bots__eyebrow">Biblioteca de bots</div>
+            <h3 className="lab-bots__title">Diseñá estilos de juego, comparalos rápido y guardalos en este navegador.</h3>
+            <p className="lab-bots__copy">
+              La idea es iterar sin fricción: creás un bot, le das personalidad con robo, descarte y corte, y después lo probás contra los presets del lab.
+            </p>
+            <div className="lab-bots__facts">
+              <span className="lab-bots__fact">Hasta {MAX_CUSTOM_BOTS} custom</span>
+              <span className="lab-bots__fact">Persistencia local</span>
+              <span className="lab-bots__fact">Importar / exportar JSON</span>
+              <span className="lab-bots__fact">Benchmark express vs FacuTron</span>
+            </div>
+            <div className="lab-bots__toolbar">
+              <div className="lab-bots__toolbar-copy">
+                <span className="lab-bots__toolbar-label">Vista de las cards</span>
+                <p>Alterná entre descripción libre y resumen táctico para escanear mejor la biblioteca.</p>
+              </div>
+              <div className="lab-bots__segmented" role="group" aria-label="Modo de vista de bots">
+                <button
+                  type="button"
+                  className="lab-bots__segment"
+                  aria-pressed={showDescMode === "desc"}
+                  onClick={() => setShowDescMode("desc")}
+                >
+                  Descripción
+                </button>
+                <button
+                  type="button"
+                  className="lab-bots__segment"
+                  aria-pressed={showDescMode === "config"}
+                  onClick={() => setShowDescMode("config")}
+                >
+                  Resumen config
+                </button>
+              </div>
+            </div>
+          </section>
 
-          {/* Custom bots */}
-          <div className="mb-5">
-            <div className="flex items-center justify-between mb-2">
-              <p className="text-xs text-gray-600 uppercase tracking-wider">Mis bots</p>
-              <div className="flex gap-1.5">
-                <button onClick={() => { setShowImport(v => !v); setImportText(""); setImportError(null); }}
-                  className="text-xs text-gray-400 hover:text-gray-200 bg-gray-800 px-2.5 py-1 rounded border border-gray-700 hover:border-gray-600 transition-colors">
-                  {showImport ? "Cancelar" : "Importar"}
+          <LabAccordionSection title="Mis bots" subtitle="Persistencia local, importación y benchmarking" defaultOpen>
+          <div className="lab-bot-library">
+            <div className="lab-bot-library__header">
+              <div>
+                <div className="lab-bot-library__eyebrow">Custom</div>
+                <h3>{customConfigs.length} / {MAX_CUSTOM_BOTS} bots guardados</h3>
+                <p>Todo queda persistido en este navegador, así que podés probar ideas y volver después sin perderlas.</p>
+              </div>
+              <div className="lab-bot-library__actions">
+                <button
+                  type="button"
+                  onClick={() => { setShowImport(v => !v); setImportText(""); setImportError(null); }}
+                  className="lab-bot-library__action"
+                  aria-pressed={showImport}
+                >
+                  {showImport ? "Cerrar importación" : "Importar JSON"}
                 </button>
                 {customConfigs.length < MAX_CUSTOM_BOTS && (
-                  <button onClick={() => setEditingBot(DEFAULT_CUSTOM_CONFIG())}
-                    className="bg-amber-600 hover:bg-amber-500 text-white px-3 py-1 rounded text-xs font-semibold active:scale-95 transition-all">
-                    + Nuevo
+                  <button
+                    type="button"
+                    onClick={() => setEditingBot(DEFAULT_CUSTOM_CONFIG())}
+                    className="lab-bot-library__action is-primary"
+                  >
+                    + Nuevo bot
                   </button>
                 )}
               </div>
             </div>
-            <div className="text-xs text-gray-500 mb-3 text-center">
-              Tus bots custom se guardan automáticamente en este navegador. Máximo {MAX_CUSTOM_BOTS}.
-            </div>
+
             {showImport && (
-              <div className="mb-3 bg-gray-900 border border-gray-700 rounded-lg p-3">
-                <p className="text-xs text-gray-500 mb-2">Pegá el JSON de un bot exportado:</p>
-                <textarea value={importText} onChange={e => { setImportText(e.target.value); setImportError(null); }}
-                  rows={4} placeholder='{ "name": "...", "emoji": "🧪", ... }'
-                  className="w-full bg-gray-800 border border-gray-700 rounded px-2 py-1.5 text-xs text-gray-200 font-mono focus:border-gray-500 focus:outline-none resize-none" />
-                {importError && <p className="text-xs text-red-400 mt-1">{importError}</p>}
-                <button onClick={() => {
-                  let raw;
-                  try { raw = JSON.parse(importText); } catch { setImportError("JSON inválido"); return; }
-                  const cfg = sanitizeImportConfig(raw);
-                  if (!cfg) { setImportError("Configuración inválida o incompleta"); return; }
-                  if (customConfigs.length >= MAX_CUSTOM_BOTS) { setImportError(`Ya tenés ${MAX_CUSTOM_BOTS} bots custom (máximo)`); return; }
-                  setCustomConfigs(prev => [...prev, cfg]);
-                  setShowImport(false); setImportText("");
-                }} className="mt-2 bg-amber-600 hover:bg-amber-500 text-white px-3 py-1 rounded text-xs font-semibold transition-colors">
-                  Importar bot
-                </button>
+              <div className="lab-bot-import">
+                <div className="lab-bot-import__head">
+                  <div>
+                    <div className="lab-bot-import__eyebrow">Importar</div>
+                    <h4>Pegá el JSON exportado de otro bot</h4>
+                  </div>
+                  <span className="lab-bot-import__hint">Se valida antes de guardarlo</span>
+                </div>
+                <textarea
+                  value={importText}
+                  onChange={e => { setImportText(e.target.value); setImportError(null); }}
+                  rows={5}
+                  placeholder='{ "name": "...", "emoji": "🧪", ... }'
+                  className="lab-bot-import__textarea"
+                />
+                <div className="lab-bot-import__footer">
+                  <div className="lab-bot-import__status">
+                    {importError ? <span className="lab-bot-import__error">{importError}</span> : "Podés importar una configuración completa y seguir editándola acá."}
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      let raw;
+                      try { raw = JSON.parse(importText); } catch { setImportError("JSON inválido"); return; }
+                      const cfg = sanitizeImportConfig(raw);
+                      if (!cfg) { setImportError("Configuración inválida o incompleta"); return; }
+                      if (customConfigs.length >= MAX_CUSTOM_BOTS) { setImportError(`Ya tenés ${MAX_CUSTOM_BOTS} bots custom (máximo)`); return; }
+                      setCustomConfigs(prev => [...prev, cfg]);
+                      setShowImport(false); setImportText("");
+                    }}
+                    className="lab-bot-library__action is-primary"
+                  >
+                    Importar bot
+                  </button>
+                </div>
               </div>
             )}
-            {customConfigs.length === 0 && !showImport && (
-              <div className="text-center text-gray-600 text-sm bg-gray-900 border border-gray-800 rounded-lg p-5">
-                Ningún bot custom aún. ¡Creá uno!
+
+            {customConfigs.length === 0 && !showImport ? (
+              <div className="lab-bot-empty">
+                <span className="lab-bot-empty__icon" aria-hidden="true">🧪</span>
+                <div>
+                  <h4>Arrancá tu propia camada de bots</h4>
+                  <p>Creá uno desde cero o importá una configuración para tunearla. Después podés medirlo rápido contra FacuTron.</p>
+                </div>
               </div>
-            )}
+            ) : null}
+
             {customConfigs.length > 0 && (
-              <div className="flex flex-wrap gap-2 justify-center">
+              <div className="lab-card-grid">
                 {customConfigs.map((cfg) => {
-                  const cc = CUSTOM_COLORS[cfg.colorIdx % CUSTOM_COLORS.length];
+                  const { color, soft, border } = getBotPalette(cfg);
+                  const bench = benchmarks[cfg.id];
+                  const benchRate = bench ? Math.round((bench.wins / bench.total) * 100) : null;
                   return (
-                    <div key={cfg.id} className="bg-gray-900 border border-gray-800 rounded-lg px-4 py-3 w-44">
-                      <div className="font-bold text-sm mb-0.5" style={{ color: cc.color }}>{cfg.emoji} {cfg.name}</div>
-                      <div className="text-gray-500 text-xs mb-2 leading-tight min-h-[2rem]">
-                        {showDescMode === "desc"
-                          ? (cfg.description || <span className="italic text-gray-600">{generateDesc(cfg)}</span>)
-                          : generateDesc(cfg)}
-                      </div>
-                      {benchmarks[cfg.id] && (
-                        <div className="mb-1.5">
-                          <div className="text-xs font-medium" style={{ color: benchmarks[cfg.id].wins / benchmarks[cfg.id].total >= 0.5 ? "#4ade80" : "#f87171" }}>
-                            {Math.round(benchmarks[cfg.id].wins / benchmarks[cfg.id].total * 100)}% vs FacuTron
+                    <article
+                      key={cfg.id}
+                      className="lab-bot-card"
+                      style={{ "--bot-accent": color, "--bot-accent-soft": soft, "--bot-accent-border": border }}
+                    >
+                      <div className="lab-bot-card__hero">
+                        <span className="lab-bot-card__avatar" aria-hidden="true">{cfg.emoji}</span>
+                        <div className="lab-bot-card__identity">
+                          <div className="lab-bot-card__name-row">
+                            <h4>{cfg.name}</h4>
+                            <span className="lab-bot-card__kind">Custom</span>
                           </div>
-                          <div className="w-full h-1 bg-gray-800 rounded-full mt-0.5 overflow-hidden">
-                            <div className="h-full rounded-full" style={{ width: `${Math.round(benchmarks[cfg.id].wins / benchmarks[cfg.id].total * 100)}%`, background: benchmarks[cfg.id].wins / benchmarks[cfg.id].total >= 0.5 ? "#4ade80" : "#f87171" }} />
+                          <p>{getBotCardCopy(cfg, showDescMode)}</p>
+                        </div>
+                      </div>
+
+                      <div className="lab-bot-card__tags">
+                        {getBotStrategyPills(cfg).map((pill) => (
+                          <span key={pill} className="lab-bot-card__tag">{pill}</span>
+                        ))}
+                      </div>
+
+                      {bench && (
+                        <div className="lab-bot-card__metric">
+                          <div className="lab-bot-card__metric-head">
+                            <span>Benchmark vs FacuTron</span>
+                            <strong style={{ color: benchRate >= 50 ? "#4ade80" : "#f87171" }}>{benchRate}%</strong>
+                          </div>
+                          <div className="lab-bot-card__bar">
+                            <div
+                              className="lab-bot-card__bar-fill"
+                              style={{ width: `${benchRate}%`, background: benchRate >= 50 ? "#10b981" : "#ef4444" }}
+                            />
                           </div>
                         </div>
                       )}
-                      <div className="flex gap-1.5 flex-wrap">
-                        <button onClick={() => setViewingBot(cfg)}
-                          className="text-xs text-gray-400 hover:text-gray-200 bg-gray-800 px-2 py-0.5 rounded">Ver</button>
-                        <button onClick={() => setEditingBot(JSON.parse(JSON.stringify(cfg)))}
-                          className="text-xs text-gray-400 hover:text-gray-200 bg-gray-800 px-2 py-0.5 rounded">Editar</button>
-                        <button onClick={() => {
-                          const { id: _id, ...exportable } = cfg;
-                          navigator.clipboard.writeText(JSON.stringify(exportable, null, 2));
-                          setCopiedId(cfg.id);
-                          setTimeout(() => setCopiedId(null), 2000);
-                        }} className="text-xs text-sky-400 hover:text-sky-200 bg-gray-800 px-2 py-0.5 rounded">
-                          {copiedId === cfg.id ? "✓ Copiado" : "Exportar"}
+
+                      <div className="lab-bot-card__actions">
+                        <button onClick={() => setViewingBot(cfg)} className="lab-bot-card__action">👀 Ver</button>
+                        <button onClick={() => setEditingBot(cloneEditorConfig(cfg))} className="lab-bot-card__action">✏️ Editar</button>
+                        <button
+                          onClick={() => {
+                            const { id: _id, ...exportable } = cfg;
+                            navigator.clipboard.writeText(JSON.stringify(exportable, null, 2));
+                            setCopiedId(cfg.id);
+                            setTimeout(() => setCopiedId(null), 2000);
+                          }}
+                          className="lab-bot-card__action is-accent"
+                        >
+                          {copiedId === cfg.id ? "✓ Copiado" : "📤 Exportar"}
                         </button>
-                        <button onClick={() => runBenchmark(cfg)} disabled={benchmarking === cfg.id}
-                          className="text-xs text-amber-400 hover:text-amber-200 bg-gray-800 px-2 py-0.5 rounded disabled:opacity-50">
-                          {benchmarking === cfg.id ? "..." : "⚡ Probar"}
+                        <button
+                          onClick={() => runBenchmark(cfg)}
+                          disabled={benchmarking === cfg.id}
+                          className="lab-bot-card__action is-warm"
+                        >
+                          {benchmarking === cfg.id ? "Midiendo..." : "⚡ Probar"}
                         </button>
-                        <button onClick={() => setCustomConfigs(prev => prev.filter(c => c.id !== cfg.id))}
-                          className="text-xs text-red-400 hover:text-red-300 bg-gray-800 px-2 py-0.5 rounded">Borrar</button>
+                        <button onClick={() => setCustomConfigs(prev => prev.filter(c => c.id !== cfg.id))} className="lab-bot-card__action is-danger">🗑️ Borrar</button>
                       </div>
-                    </div>
+                    </article>
                   );
                 })}
               </div>
             )}
+
             {customConfigs.length >= MAX_CUSTOM_BOTS && (
-              <div className="text-xs text-gray-600 text-center mt-3">Máximo {MAX_CUSTOM_BOTS} bots custom</div>
+              <div className="lab-bot-library__limit">Llegaste al máximo de {MAX_CUSTOM_BOTS} bots custom para este navegador.</div>
             )}
           </div>
+          </LabAccordionSection>
 
-          {/* Built-in bots */}
-          <div className="border-t border-gray-800 pt-4 mb-4">
-            <p className="text-xs text-gray-600 uppercase tracking-wider mb-2">Preconstruidos</p>
-            <div className="flex flex-wrap gap-2 justify-center">
-              {BUILTIN_BOT_CONFIGS.map(cfg => (
-                <div key={cfg.id} className={`${cfg.bg} border ${cfg.border} rounded-lg px-4 py-3 w-44`}>
-                  <div className="font-bold text-sm mb-0.5" style={{ color: cfg.color }}>{cfg.emoji} {cfg.name}</div>
-                  <div className="text-gray-500 text-xs mb-2 leading-tight min-h-[2rem]">
-                    {showDescMode === "desc"
-                      ? (cfg.description || <span className="italic text-gray-600">{generateDesc(cfg)}</span>)
-                      : generateDesc(cfg)}
-                  </div>
-                  <button onClick={() => setViewingBot(cfg)}
-                    className="text-xs text-gray-400 hover:text-gray-200 bg-gray-900/60 px-2 py-0.5 rounded transition-colors">
-                    Ver config
-                  </button>
-                </div>
-              ))}
+          <LabAccordionSection title="Preconstruidos" subtitle="Base estable para comparar y extender" defaultOpen={false}>
+          <div className="lab-bot-library">
+            <div className="lab-bot-library__header">
+              <div>
+                <div className="lab-bot-library__eyebrow">Presets</div>
+                <h3>Los bots base del lab</h3>
+                <p>Sirven como punto de partida visual y táctico para comparar decisiones de robo, descarte y corte.</p>
+              </div>
+            </div>
+
+            <div className="lab-card-grid">
+              {BUILTIN_BOT_CONFIGS.map(cfg => {
+                const { color, soft, border } = getBotPalette(cfg);
+                return (
+                  <article
+                    key={cfg.id}
+                    className="lab-bot-card is-preset"
+                    style={{ "--bot-accent": color, "--bot-accent-soft": soft, "--bot-accent-border": border }}
+                  >
+                    <div className="lab-bot-card__hero">
+                      <span className="lab-bot-card__avatar" aria-hidden="true">{cfg.emoji}</span>
+                      <div className="lab-bot-card__identity">
+                        <div className="lab-bot-card__name-row">
+                          <h4>{cfg.name}</h4>
+                          <span className="lab-bot-card__kind">Preset</span>
+                        </div>
+                        <p>{getBotCardCopy(cfg, showDescMode)}</p>
+                      </div>
+                    </div>
+
+                    <div className="lab-bot-card__tags">
+                      {getBotStrategyPills(cfg).map((pill) => (
+                        <span key={pill} className="lab-bot-card__tag">{pill}</span>
+                      ))}
+                    </div>
+
+                    <div className="lab-bot-card__actions">
+                      <button onClick={() => setViewingBot(cfg)} className="lab-bot-card__action">👀 Ver config</button>
+                    </div>
+                  </article>
+                );
+              })}
             </div>
           </div>
+          </LabAccordionSection>
         </div>
       )}
     </div>
+    </LabPanel>
   )}
-</div>
+</main>
 
 );
 }

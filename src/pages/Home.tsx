@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { Link } from 'react-router-dom'
 import Topbar from '../components/Topbar'
+import { prefetchRoute } from '../lib/page-loaders'
 
 type Category = 'Puzzles' | 'Cartas' | 'Juegos'
 
@@ -99,9 +100,54 @@ export default function Home() {
   const filtered = TOOLS
     .filter(t => activeCategory === null || t.category === activeCategory)
     .sort((a, b) => Number(!favorites.has(a.to)) - Number(!favorites.has(b.to)))
+  const favoriteTools = filtered.filter(tool => favorites.has(tool.to))
+  const otherTools = filtered.filter(tool => !favorites.has(tool.to))
+  const hasOtherTools = otherTools.length > 0
+
+  function warmRoute(path: string) {
+    prefetchRoute(path)
+  }
+
+  function renderToolCard(tool: (typeof TOOLS)[number]) {
+    const isFavorite = favorites.has(tool.to)
+
+    return (
+      <article key={tool.to} className={`card${isFavorite ? ' card--fav' : ''}`}>
+        <div className="card-header">
+          <div className="card-icon" aria-hidden="true">{tool.icon}</div>
+          <button
+            type="button"
+            className={`fav-btn${isFavorite ? ' active' : ''}`}
+            aria-label={isFavorite ? 'Quitar de favoritos' : 'Agregar a favoritos'}
+            aria-pressed={isFavorite}
+            onClick={() => toggleFavorite(tool.to)}
+          >
+            {isFavorite ? '★' : '☆'}
+          </button>
+        </div>
+        <div className="chips">
+          {tool.chips.map(chip => (
+            <span key={chip} className="chip">{chip}</span>
+          ))}
+        </div>
+        <h2>{tool.title}</h2>
+        <p>{tool.description}</p>
+        <div className="actions">
+          <Link
+            className="cta primary"
+            to={tool.to}
+            onMouseEnter={() => warmRoute(tool.to)}
+            onFocus={() => warmRoute(tool.to)}
+          >
+            Abrir herramienta
+          </Link>
+        </div>
+      </article>
+    )
+  }
 
   return (
-    <main className="page">
+    <main className="page page--home" id="main-content">
       <Topbar label="tabletop-helper" sublabel="Herramientas de mesa" />
 
       <section className="hero">
@@ -114,15 +160,19 @@ export default function Home() {
 
       <div className="filter-bar" role="toolbar" aria-label="Filtrar por categoría">
         <button
+          type="button"
           className={`filter-btn${activeCategory === null ? ' active' : ''}`}
+          aria-pressed={activeCategory === null}
           onClick={() => setActiveCategory(null)}
         >
           Todos
         </button>
         {CATEGORIES.map(cat => (
           <button
+            type="button"
             key={cat}
             className={`filter-btn${activeCategory === cat ? ' active' : ''}`}
+            aria-pressed={activeCategory === cat}
             onClick={() => setActiveCategory(activeCategory === cat ? null : cat)}
           >
             {cat}
@@ -130,31 +180,38 @@ export default function Home() {
         ))}
       </div>
 
-      <section className="grid" aria-label="Herramientas">
-        {filtered.map(tool => (
-          <article key={tool.to} className={`card${favorites.has(tool.to) ? ' card--fav' : ''}`}>
-            <div className="card-header">
-              <div className="card-icon" aria-hidden="true">{tool.icon}</div>
-              <button
-                className={`fav-btn${favorites.has(tool.to) ? ' active' : ''}`}
-                aria-label={favorites.has(tool.to) ? 'Quitar de favoritos' : 'Agregar a favoritos'}
-                onClick={() => toggleFavorite(tool.to)}
-              >
-                {favorites.has(tool.to) ? '★' : '☆'}
-              </button>
+      {favoriteTools.length > 0 && (
+        <section className="tool-section" aria-labelledby="favoritas-title">
+          <div className="tool-section__header">
+            <div>
+              <div className="eyebrow eyebrow--small">Acceso rápido</div>
+              <h2 id="favoritas-title">Tus favoritas</h2>
             </div>
-            <div className="chips">
-              {tool.chips.map(chip => (
-                <span key={chip} className="chip">{chip}</span>
-              ))}
-            </div>
-            <h2>{tool.title}</h2>
-            <p>{tool.description}</p>
-            <div className="actions">
-              <Link className="cta primary" to={tool.to}>Abrir herramienta</Link>
-            </div>
-          </article>
-        ))}
+            <p>Primero lo que más usás.</p>
+          </div>
+          <div className="grid" aria-label="Herramientas favoritas">
+            {favoriteTools.map(renderToolCard)}
+          </div>
+        </section>
+      )}
+
+      <section className="tool-section" aria-labelledby="tools-title">
+        <div className="tool-section__header">
+          <div>
+            <div className="eyebrow eyebrow--small">Catálogo</div>
+            <h2 id="tools-title">{favoriteTools.length > 0 ? 'Todas las demás' : 'Herramientas disponibles'}</h2>
+          </div>
+          <p>{filtered.length} herramientas visibles.</p>
+        </div>
+        {hasOtherTools ? (
+          <div className="grid" aria-label="Herramientas">
+            {otherTools.map(renderToolCard)}
+          </div>
+        ) : (
+          <div className="hero">
+            <p>No quedan herramientas fuera de favoritas con este filtro. Probá cambiar la categoría o sacar alguna estrella.</p>
+          </div>
+        )}
       </section>
 
       <footer className="site-footer">

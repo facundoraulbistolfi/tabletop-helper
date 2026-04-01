@@ -7,6 +7,7 @@ import {
   buildTournamentCeremonyData,
   createEmptyTournamentResults,
   getTournamentBotTotals,
+  isValidTournamentResults,
 } from './chinchon-tournament'
 
 function cloneResults(results: ReturnType<typeof createEmptyTournamentResults>) {
@@ -96,6 +97,76 @@ function createTieBreakResults() {
   results.chinchones[2][0] = 2
   results.chinchones[2][1] = 1
   results.chinchones[2][3] = 1
+
+  return results
+}
+
+function createHeadToHeadPointsTieResults() {
+  const results = createEmptyTournamentResults()
+
+  results.wins[0][1] = 4
+  results.games[0][1] = 10
+  results.wins[0][2] = 8
+  results.games[0][2] = 10
+  results.wins[0][3] = 6
+  results.games[0][3] = 10
+  results.wins[1][2] = 5
+  results.games[1][2] = 10
+  results.wins[1][3] = 5
+  results.games[1][3] = 10
+  results.wins[2][3] = 5
+  results.games[2][3] = 10
+
+  results.mirrorWins[2][3] = 3
+  results.mirrorWins[3][2] = 2
+  results.mirrorPairs[2][3] = 5
+
+  results.chinchones[1][0] = 1
+  results.chinchones[1][2] = 2
+  results.chinchones[1][3] = 1
+
+  return results
+}
+
+function createNoRecognitionResults() {
+  const results = createEmptyTournamentResults()
+
+  results.wins[0][1] = 6
+  results.games[0][1] = 10
+  results.wins[0][2] = 7
+  results.games[0][2] = 10
+  results.wins[0][3] = 4
+  results.games[0][3] = 10
+  results.wins[1][2] = 6
+  results.games[1][2] = 10
+  results.wins[1][3] = 6
+  results.games[1][3] = 10
+  results.wins[2][3] = 6
+  results.games[2][3] = 10
+
+  results.mirrorWins[0][1] = 2
+  results.mirrorWins[1][0] = 1
+  results.mirrorPairs[0][1] = 5
+  results.mirrorWins[2][0] = 2
+  results.mirrorWins[0][2] = 1
+  results.mirrorPairs[0][2] = 5
+  results.mirrorWins[0][3] = 2
+  results.mirrorWins[3][0] = 1
+  results.mirrorPairs[0][3] = 5
+  results.mirrorWins[1][2] = 1
+  results.mirrorWins[2][1] = 3
+  results.mirrorPairs[1][2] = 5
+  results.mirrorWins[1][3] = 1
+  results.mirrorWins[3][1] = 1
+  results.mirrorPairs[1][3] = 5
+  results.mirrorWins[2][3] = 2
+  results.mirrorWins[3][2] = 1
+  results.mirrorPairs[2][3] = 5
+
+  results.chinchones[1][0] = 1
+  results.chinchones[1][2] = 2
+  results.chinchones[1][3] = 1
+  results.chinchones[3][0] = 1
 
   return results
 }
@@ -339,5 +410,50 @@ describe('buildTournamentCeremonyData', () => {
       { idx: 1, score: 4, wins: 15 },
     ])
     expect(ceremony.ceremonyChampion.idx).toBe(0)
+  })
+
+  it('uses the direct matchup first when two bots tie on ceremony points', () => {
+    const results = createHeadToHeadPointsTieResults()
+    const ceremony = buildTournamentCeremonyData(results)
+
+    const tiedBotsOrder = ceremony.ceremonyRanking
+      .filter((entry) => [0, 1, 3].includes(entry.idx))
+      .map((entry) => entry.idx)
+
+    expect(tiedBotsOrder).toEqual([1, 0, 3])
+  })
+
+  it('marks bots without any good or bad recognition with the can award', () => {
+    const results = createNoRecognitionResults()
+    const ceremony = buildTournamentCeremonyData(results)
+
+    expect(ceremony.everyoneShouldWinPrizeBots.map((entry) => entry.idx)).toEqual([3])
+  })
+
+  it('falls back safely when malformed tournament results slip through', () => {
+    const malformedResults = {
+      wins: [],
+      games: [],
+      mirrorWins: [],
+      mirrorPairs: [],
+      chinchones: [],
+    }
+
+    expect(isValidTournamentResults(malformedResults)).toBe(false)
+    expect(getTournamentBotTotals(malformedResults as never, 0)).toEqual({
+      wins: 0,
+      games: 0,
+      winPct: 0,
+      mirrorWins: 0,
+      mirrorPairs: 0,
+      mirrorPct: 0,
+      chinchones: 0,
+    })
+
+    const ceremony = buildTournamentCeremonyData(malformedResults as never)
+
+    expect(ceremony.ceremonyChampion.idx).toBe(0)
+    expect(ceremony.ceremonyRanking).toHaveLength(4)
+    expect(ceremony.botTotals.every((entry) => entry.games === 0 && entry.wins === 0)).toBe(true)
   })
 })

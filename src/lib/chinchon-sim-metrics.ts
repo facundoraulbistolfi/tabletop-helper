@@ -1,4 +1,4 @@
-export const STABLE_SIMULATION_STREAK = 20
+export const STABLE_SIMULATION_STREAK = 10
 export const MIN_SIMULATIONS_BEFORE_STABLE_STOP = 200
 
 export type WinRateTuple = [number, number]

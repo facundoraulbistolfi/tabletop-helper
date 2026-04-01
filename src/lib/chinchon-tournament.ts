@@ -82,11 +82,20 @@ export type TournamentCeremonyData = {
   beatAllAwardWinner: TournamentIndexedBotTotals | null
   lostToEveryoneAward: TournamentHeadToHeadStatus | null
   noRiskBots: TournamentIndexedBotTotals[]
+  everyoneShouldWinPrizeBots: TournamentCeremonyRankingEntry[]
   ceremonyRanking: TournamentCeremonyRankingEntry[]
   ceremonyChampion: TournamentCeremonyRankingEntry
 }
 
 export const TOURNAMENT_BOT_COUNT = 4
+
+const TOURNAMENT_RESULT_KEYS = [
+  'wins',
+  'games',
+  'mirrorWins',
+  'mirrorPairs',
+  'chinchones',
+] as const
 
 const FIXTURE_PAIRINGS = [
   [
@@ -120,9 +129,54 @@ function createMatrix(size: number): number[][] {
   return Array.from({ length: size }, () => Array(size).fill(0))
 }
 
+export function isValidTournamentResults(
+  results: unknown,
+  botCount = TOURNAMENT_BOT_COUNT,
+): results is TournamentResults {
+  if (!results || typeof results !== 'object') return false
+
+  return TOURNAMENT_RESULT_KEYS.every((key) => {
+    const matrix = (results as Record<string, unknown>)[key]
+    return Array.isArray(matrix)
+      && matrix.length >= botCount
+      && matrix.slice(0, botCount).every((row) =>
+        Array.isArray(row)
+        && row.length >= botCount
+        && row.slice(0, botCount).every((cell) => typeof cell === 'number' && Number.isFinite(cell)),
+      )
+  })
+}
+
 function getPercentOfTotal(value: number, total: number): number {
   if (total <= 0) return 0
   return (value / total) * 100
+}
+
+function getHeadToHeadWins(
+  results: TournamentResults,
+  botAIndex: number,
+  botBIndex: number,
+): [number, number] {
+  const low = Math.min(botAIndex, botBIndex)
+  const high = Math.max(botAIndex, botBIndex)
+  const games = results.games[low][high]
+
+  if (botAIndex < botBIndex) {
+    const winsA = results.wins[botAIndex][botBIndex]
+    return [winsA, games - winsA]
+  }
+
+  const winsB = results.wins[botBIndex][botAIndex]
+  return [games - winsB, winsB]
+}
+
+function compareByHeadToHead(
+  results: TournamentResults,
+  botAIndex: number,
+  botBIndex: number,
+): number {
+  const [winsA, winsB] = getHeadToHeadWins(results, botAIndex, botBIndex)
+  return winsB - winsA
 }
 
 function getMatchGames(results: TournamentResults, match: TournamentFixtureMatch): number {
@@ -179,7 +233,7 @@ export function getTournamentBotTotals(
   botIndex: number,
   botCount = TOURNAMENT_BOT_COUNT,
 ): TournamentBotTotals {
-  if (!results) {
+  if (!isValidTournamentResults(results, botCount)) {
     return {
       wins: 0,
       games: 0,
@@ -231,7 +285,7 @@ export function buildTournamentMatchSnapshot(
   results: TournamentResults | null | undefined,
   status: TournamentMatchSnapshot['status'],
 ): TournamentMatchSnapshot {
-  const safeResults = results ?? createEmptyTournamentResults()
+  const safeResults = isValidTournamentResults(results) ? results : createEmptyTournamentResults()
   const games = getMatchGames(safeResults, match)
   const wins = getMatchWins(safeResults, match)
   const winPct = getWinRates(wins[0], wins[1])
@@ -266,9 +320,12 @@ export function buildTournamentCeremonyData(
     throw new Error('Tournament ceremony requires at least one bot')
   }
 
+  const safeResults = isValidTournamentResults(results, botCount)
+    ? results
+    : createEmptyTournamentResults(botCount)
   const botTotals = Array.from({ length: botCount }, (_, idx) => ({
     idx,
-    ...getTournamentBotTotals(results, idx, botCount),
+    ...getTournamentBotTotals(safeResults, idx, botCount),
   }))
 
   const rankingWins = [...botTotals].sort(
@@ -284,7 +341,6 @@ export function buildTournamentCeremonyData(
     }))
     .sort((a, b) => b.chinchones - a.chinchones || b.rate - a.rate)
 
-  const safeResults = results ?? createEmptyTournamentResults(botCount)
   const headToHeadStatus = botTotals.map(({ idx }) => {
     let beatAll = true
     let lostAll = true
@@ -384,12 +440,16 @@ export function buildTournamentCeremonyData(
     .sort(
       (a, b) =>
         b.score - a.score
+        || compareByHeadToHead(safeResults, a.idx, b.idx)
         || b.wins - a.wins
         || b.mirrorWins - a.mirrorWins
         || b.chinchones - a.chinchones
         || b.winPct - a.winPct
         || b.mirrorPct - a.mirrorPct,
     )
+  const everyoneShouldWinPrizeBots = ceremonyRanking.filter(
+    (entry) => entry.awardsWon === 0 && !entry.lostAll && entry.chinchones > 0,
+  )
 
   return {
     botTotals,
@@ -404,6 +464,7 @@ export function buildTournamentCeremonyData(
     beatAllAwardWinner,
     lostToEveryoneAward,
     noRiskBots,
+    everyoneShouldWinPrizeBots,
     ceremonyRanking,
     ceremonyChampion: ceremonyRanking[0]!,
   }
