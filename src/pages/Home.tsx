@@ -69,18 +69,29 @@ const TOOLS = [
 ]
 
 const CATEGORIES: Category[] = ['Puzzles', 'Cartas', 'Juegos']
+const FAVORITES_STORAGE_KEY = 'ludario-favorites'
+const LEGACY_FAVORITES_STORAGE_KEY = 'tabletop-favorites'
 
 function loadFavorites(): Set<string> {
   try {
-    const stored = localStorage.getItem('tabletop-favorites')
-    return stored ? new Set(JSON.parse(stored) as string[]) : new Set()
+    const current = localStorage.getItem(FAVORITES_STORAGE_KEY)
+    if (current) return new Set(JSON.parse(current) as string[])
+
+    const legacy = localStorage.getItem(LEGACY_FAVORITES_STORAGE_KEY)
+    if (!legacy) return new Set()
+
+    const migrated = new Set(JSON.parse(legacy) as string[])
+    localStorage.setItem(FAVORITES_STORAGE_KEY, JSON.stringify([...migrated]))
+    localStorage.removeItem(LEGACY_FAVORITES_STORAGE_KEY)
+    return migrated
   } catch {
     return new Set()
   }
 }
 
 function saveFavorites(favs: Set<string>) {
-  localStorage.setItem('tabletop-favorites', JSON.stringify([...favs]))
+  localStorage.setItem(FAVORITES_STORAGE_KEY, JSON.stringify([...favs]))
+  localStorage.removeItem(LEGACY_FAVORITES_STORAGE_KEY)
 }
 
 export default function Home() {
@@ -148,7 +159,7 @@ export default function Home() {
 
   return (
     <main className="page page--home" id="main-content">
-      <Topbar label="tabletop-helper" sublabel="Herramientas de mesa" />
+      <Topbar label="Ludario" sublabel="Herramientas de mesa" />
 
       <section className="hero">
         <div className="eyebrow">Herramientas de mesa</div>
@@ -216,7 +227,7 @@ export default function Home() {
 
       <footer className="site-footer">
         <a
-          href="https://github.com/facundoraulbistolfi/tabletop-helper"
+          href="https://github.com/facundoraulbistolfi/ludario"
           target="_blank"
           rel="noopener noreferrer"
         >

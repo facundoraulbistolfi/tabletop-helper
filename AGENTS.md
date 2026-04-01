@@ -1,8 +1,8 @@
-# tabletop-helper — AGENTS.md
+# ludario — AGENTS.md
 
 SPA estática con utilidades y minijuegos para juegos de mesa, cartas, puzzles y scorekeeping casual. El producto corre entero en el navegador y se publica en GitHub Pages.
 
-Sitio público: **https://facundoraulbistolfi.github.io/tabletop-helper/**
+Sitio público: **https://facundoraulbistolfi.github.io/ludario/**
 
 Este archivo y `CLAUDE.md` deben mantenerse alineados. Si cambia el catálogo, la arquitectura o las convenciones, actualizar ambos.
 
@@ -10,7 +10,7 @@ Este archivo y `CLAUDE.md` deben mantenerse alineados. Si cambia el catálogo, l
 
 ## Definición del producto
 
-`tabletop-helper` no es una sola tool: es un hub de herramientas ligeras para jugar mejor o resolver más rápido desde el teléfono o la compu, sin instalación ni cuenta.
+`ludario` no es una sola tool: es un hub de herramientas ligeras para jugar mejor o resolver más rápido desde el teléfono o la compu, sin instalación ni cuenta.
 
 Hoy la app se organiza en tres grupos:
 
@@ -191,7 +191,7 @@ Importante: ya no es correcto asumir “CSS Modules por tool” como regla unive
 ## Estructura del repo
 
 ```text
-tabletop-helper/
+ludario/
 ├── public/
 │   └── .nojekyll
 ├── src/
@@ -304,7 +304,7 @@ El deploy productivo va a GitHub Pages.
 
 Puntos importantes:
 
-- `vite.config.ts` usa base `/tabletop-helper/`.
+- `vite.config.ts` usa base `/ludario/`.
 - GitHub Actions builda con Node 20.
 - `deploy.yml` publica `dist/` en Pages.
 - `ci.yml` corre tests + build en pushes y PRs.

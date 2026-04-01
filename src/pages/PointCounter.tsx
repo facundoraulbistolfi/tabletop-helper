@@ -32,7 +32,8 @@ interface CounterState {
   updatedAt: number
 }
 
-const STORAGE_KEY = 'tabletop-point-counter-state-v1'
+const STORAGE_KEY = 'ludario-point-counter-state-v1'
+const LEGACY_STORAGE_KEY = 'tabletop-point-counter-state-v1'
 const LONG_PRESS_MS = 400
 const DEFAULT_COLORS = [
   '#EF4444', '#F97316', '#F59E0B', '#84CC16', '#22C55E', '#10B981',
@@ -101,16 +102,25 @@ function sanitizeState(raw: CounterState): CounterState {
   }
 }
 
+function loadStoredState(): CounterState {
+  try {
+    const current = localStorage.getItem(STORAGE_KEY)
+    if (current) return sanitizeState(JSON.parse(current) as CounterState)
+
+    const legacy = localStorage.getItem(LEGACY_STORAGE_KEY)
+    if (!legacy) return makeDefaultState()
+
+    const migrated = sanitizeState(JSON.parse(legacy) as CounterState)
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(migrated))
+    localStorage.removeItem(LEGACY_STORAGE_KEY)
+    return migrated
+  } catch {
+    return makeDefaultState()
+  }
+}
+
 export default function PointCounter() {
-  const [state, setState] = useState<CounterState>(() => {
-    try {
-      const stored = localStorage.getItem(STORAGE_KEY)
-      if (!stored) return makeDefaultState()
-      return sanitizeState(JSON.parse(stored) as CounterState)
-    } catch {
-      return makeDefaultState()
-    }
-  })
+  const [state, setState] = useState<CounterState>(loadStoredState)
 
   const [setupCount, setSetupCount] = useState(state.players.length)
   const [phase, setPhase] = useState<'setup' | 'game'>(state.players.length >= 2 ? 'game' : 'setup')
@@ -126,6 +136,7 @@ export default function PointCounter() {
 
   useEffect(() => {
     localStorage.setItem(STORAGE_KEY, JSON.stringify({ ...state, updatedAt: Date.now() }))
+    localStorage.removeItem(LEGACY_STORAGE_KEY)
   }, [state])
 
   useEffect(() => {

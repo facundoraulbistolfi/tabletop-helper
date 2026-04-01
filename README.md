@@ -1,11 +1,11 @@
-# tabletop-helper
+# Ludario
 
 > Herramientas web para juegos de mesa, cartas, sudokus y puzzles.
 
-[![CI](https://github.com/facundoraulbistolfi/tabletop-helper/actions/workflows/ci.yml/badge.svg)](https://github.com/facundoraulbistolfi/tabletop-helper/actions/workflows/ci.yml)
-[![Deploy](https://github.com/facundoraulbistolfi/tabletop-helper/actions/workflows/deploy.yml/badge.svg)](https://github.com/facundoraulbistolfi/tabletop-helper/actions/workflows/deploy.yml)
+[![CI](https://github.com/facundoraulbistolfi/ludario/actions/workflows/ci.yml/badge.svg)](https://github.com/facundoraulbistolfi/ludario/actions/workflows/ci.yml)
+[![Deploy](https://github.com/facundoraulbistolfi/ludario/actions/workflows/deploy.yml/badge.svg)](https://github.com/facundoraulbistolfi/ludario/actions/workflows/deploy.yml)
 
-**Sitio:** [facundoraulbistolfi.github.io/tabletop-helper](https://facundoraulbistolfi.github.io/tabletop-helper/)
+**Sitio:** [facundoraulbistolfi.github.io/ludario](https://facundoraulbistolfi.github.io/ludario/)
 
 ---
 
@@ -61,10 +61,10 @@ Ludo temático de Pac-Man: movés fichas de fantasmas por el tablero, capturás 
 ## Desarrollo local
 
 ```bash
-git clone https://github.com/facundoraulbistolfi/tabletop-helper.git
-cd tabletop-helper
+git clone https://github.com/facundoraulbistolfi/ludario.git
+cd ludario
 npm install
-npm run dev        # abre en http://localhost:5173/tabletop-helper/
+npm run dev        # abre en http://localhost:5173/ludario/
 ```
 
 Otros comandos:

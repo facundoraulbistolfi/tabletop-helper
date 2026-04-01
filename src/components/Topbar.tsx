@@ -18,7 +18,7 @@ interface TopbarProps {
   sublabel?: string
 }
 
-export default function Topbar({ label, sublabel = 'tabletop-helper' }: TopbarProps) {
+export default function Topbar({ label, sublabel = 'Ludario' }: TopbarProps) {
   const { pathname } = useLocation()
   const [isMenuOpen, setIsMenuOpen] = useState(false)
   const currentLink = NAV_LINKS.find(link => link.to === pathname) ?? NAV_LINKS[0]
