@@ -1480,15 +1480,15 @@ const chinchonGames = Array.from({ length: n }, () => Array(n).fill(0));
 
 const STABLE_WINDOW = 20;
 const STABLE_THRESHOLD = Math.pow(10, -tourStabilizeDecimals) * (tourStabilizeDecimals === 0 ? 3 : 1);
-const MIN_BATCHES = 200;
-const MAX_BATCHES = numSims;
+const MIN_SIMS = 200;
+const MAX_SIMS = numSims;
 const BATCH = 20;
-let pairIdx = 0, batchesDone = 0, currentWins = 0, currentTotal = 0, currentMirror = [0, 0], currentChinchones = [0, 0];
+let pairIdx = 0, simsDone = 0, currentWins = 0, currentTotal = 0, currentMirror = [0, 0], currentChinchones = [0, 0];
 const winSnapshots = [];
 
 const isStablePair = () => {
   if (!tourUseStabilized) return false;
-  if (winSnapshots.length < STABLE_WINDOW || batchesDone < MIN_BATCHES) return false;
+  if (winSnapshots.length < STABLE_WINDOW || simsDone < MIN_SIMS) return false;
   const recent = winSnapshots.slice(-STABLE_WINDOW);
   const mean = recent.reduce((a, b) => a + b, 0) / recent.length;
   const stddev = Math.sqrt(recent.reduce((a, b) => a + (b - mean) ** 2, 0) / recent.length);
@@ -1499,12 +1499,13 @@ const tick = () => {
   if (stopTourRef.current) { setTourRunning(false); return; }
   const [ai, bi] = pairs[pairIdx];
   const globalA = tourBots[ai], globalB = tourBots[bi];
-  if (batchesDone >= MAX_BATCHES) {
+  if (simsDone >= MAX_SIMS) {
     pairIdx++;
-    batchesDone = 0; currentWins = 0; currentTotal = 0; currentMirror = [0, 0]; currentChinchones = [0, 0]; winSnapshots.length = 0;
+    simsDone = 0; currentWins = 0; currentTotal = 0; currentMirror = [0, 0]; currentChinchones = [0, 0]; winSnapshots.length = 0;
     if (pairIdx >= pairs.length) { setTourRunning(false); setTourProgress(100); setTourCurrentPair(null); setTourCurrentStats(null); return; }
   }
-  for (let i = 0; i < BATCH; i++) {
+  const simsThisTick = Math.min(BATCH, MAX_SIMS - simsDone);
+  for (let i = 0; i < simsThisTick; i++) {
     const [gA, gB] = simulateGamePair(globalA, globalB);
     const wA = (gA.gameLoser === 1 ? 1 : 0) + (gB.gameLoser === 1 ? 1 : 0);
     wins[ai][bi] += wA;
@@ -1529,10 +1530,10 @@ const tick = () => {
     currentWins += wA;
     currentTotal += 2;
   }
-  batchesDone++;
+  simsDone += simsThisTick;
   winSnapshots.push(currentTotal > 0 ? (currentWins / currentTotal) * 100 : 50);
   const stable = isStablePair();
-  const fraction = stable || batchesDone >= MAX_BATCHES ? 1 : Math.min(batchesDone / MIN_BATCHES, 0.99);
+  const fraction = stable || simsDone >= MAX_SIMS ? 1 : Math.min(simsDone / MIN_SIMS, 0.99);
   setTourProgress(Math.min(99, Math.round(((pairIdx + fraction) / pairs.length) * 100)));
   setTourCurrentPair(pairIdx);
   setTourCurrentStats({
@@ -1549,9 +1550,9 @@ const tick = () => {
     chinchones: chinchones.map(r => [...r]),
     chinchonGames: chinchonGames.map(r => [...r]),
   });
-  if (stable || batchesDone >= MAX_BATCHES) {
+  if (stable || simsDone >= MAX_SIMS) {
     pairIdx++;
-    batchesDone = 0; currentWins = 0; currentTotal = 0; currentMirror = [0, 0]; currentChinchones = [0, 0]; winSnapshots.length = 0;
+    simsDone = 0; currentWins = 0; currentTotal = 0; currentMirror = [0, 0]; currentChinchones = [0, 0]; winSnapshots.length = 0;
     if (pairIdx >= pairs.length) { setTourRunning(false); setTourProgress(100); setTourCurrentPair(null); setTourCurrentStats(null); return; }
     setTourCurrentPair(pairIdx);
   }
