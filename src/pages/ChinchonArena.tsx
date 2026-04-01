@@ -659,10 +659,10 @@ extras.length ? `  Especial: ${extras.join("; ")}` : null,
 }
 
 function generateSimPrompt(cfg0, cfg1, metrics) {
-const { gameWins, roundWins, sweepWins, chinchonWins, totalRounds, numGames } = metrics;
+const { gameWins, roundWins, sweepWins, chinchonWins, totalRounds, numSims } = metrics;
 const total = gameWins[0] + gameWins[1];
 const totalPairs = sweepWins[0] + sweepWins[1] + sweepWins[2];
-return `Tengo dos bots de Chinchón (baraja española de 50 cartas, incluyendo 2 comodines) que simularon ${numGames} partidas espejo.
+return `Tengo dos bots de Chinchón (baraja española de 50 cartas, incluyendo 2 comodines) que corrieron ${numSims} simulaciones. Cada simulación es un par de partidas espejo (misma repartida, manos invertidas), dando ${total} partidas totales.
 
 REGLAS RELEVANTES:
 - 7 cartas por jugador. En su turno: roba del mazo o descarte, luego descarta 1.
@@ -671,7 +671,7 @@ REGLAS RELEVANTES:
 - Si todas las cartas forman melds: corte con -10 puntos.
 - Chinchón: 7 cartas consecutivas del mismo palo y sin comodines = victoria instantánea de la partida.
 - El jugador acumula los puntos del que cortó al revés (o su propio resto si cortó). Se elimina a los 100 puntos.
-- Partidas espejo: misma repartida de cartas, pero se intercambian manos y quien arranca. Neutraliza la aleatoriedad.
+- Simulación espejo: cada simulación corre 2 partidas con la misma repartida pero intercambiando manos y turno inicial. Neutraliza la aleatoriedad.
 
 BOT 1:
 ${botConfigToPromptText(cfg0)}
@@ -679,7 +679,7 @@ ${botConfigToPromptText(cfg0)}
 BOT 2:
 ${botConfigToPromptText(cfg1)}
 
-RESULTADOS (${numGames} partidas espejo = ${total} partidas totales):
+RESULTADOS (${numSims} simulaciones = ${total} partidas totales):
 - Partidas ganadas: ${cfg0.emoji} ${cfg0.name} ${gameWins[0]} (${((gameWins[0]/total)*100).toFixed(1)}%) vs ${cfg1.emoji} ${cfg1.name} ${gameWins[1]} (${((gameWins[1]/total)*100).toFixed(1)}%)
 - Rondas ganadas: ${cfg0.name} ${roundWins[0]} (${((roundWins[0]/totalRounds)*100).toFixed(1)}%) vs ${cfg1.name} ${roundWins[1]} (${((roundWins[1]/totalRounds)*100).toFixed(1)}%) — ${totalRounds} rondas totales
 - Promedio de rondas por partida: ${(totalRounds / total).toFixed(1)}
@@ -1307,7 +1307,7 @@ const runBenchmark = useCallback((cfg) => {
 // Sim
 const [simB0, setSimB0] = useState(0);
 const [simB1, setSimB1] = useState(1);
-const [numGames, setNumGames] = useState(50);
+const [numSims, setNumSims] = useState(50);
 const [chartData, setChartData] = useState(null);
 const [roundWins, setRoundWins] = useState([0, 0]);
 const [gameWins, setGameWins] = useState([0, 0]);
@@ -1365,10 +1365,11 @@ const fd = {}, dd = {}; let rw0 = 0, rw1 = 0, gw0 = 0, gw1 = 0, sw0 = 0, sw1 = 0
 const wrSnaps: {games: number, rate: number}[] = [];
 const swSnaps: {pairs: number, rate0: number, rate1: number}[] = [];
 const n0 = BOT[simB0].name, n1 = BOT[simB1].name;
+const MAX_SIMS = numSims;
 const tick = () => {
 if (stopRef.current) { setSimRun(false); return; }
-const batch = numGames <= 100 ? 1 : numGames <= 1000 ? 5 : numGames <= 10000 ? 50 : 200;
-const end = Math.min(done + batch, numGames);
+const batch = MAX_SIMS <= 100 ? 1 : MAX_SIMS <= 1000 ? 5 : MAX_SIMS <= 10000 ? 50 : 200;
+const end = Math.min(done + batch, MAX_SIMS);
 for (let i = done; i < end; i++) {
 const [gA, gB] = simulateGamePair(simB0, simB1);
 const winnerA = gA.gameLoser === 0 ? 1 : 0;
@@ -1391,14 +1392,14 @@ const totalG = gw0 + gw1;
 if (totalG > 0) wrSnaps.push({ games: totalG, rate: (gw0 / totalG) * 100 });
 const totalPairs = sw0 + sw1 + splits;
 if (totalPairs > 0) swSnaps.push({ pairs: totalPairs, rate0: (sw0 / totalPairs) * 100, rate1: (sw1 / totalPairs) * 100 });
-setProg(Math.round(done / numGames * 100));
+setProg(Math.round(done / MAX_SIMS * 100));
 setChartData(buildChartData(fd, dd, n0, n1));
 setRoundWins([rw0, rw1]); setGameWins([gw0, gw1]); setSweepWins([sw0, sw1, splits]); setTotalRounds(tr);
 setWinRateHistory([...wrSnaps]); setSweepRateHistory([...swSnaps]); setChinchonWins([cc0, cc1]);
-if (done < numGames) setTimeout(tick, 0); else setSimRun(false);
+if (done < MAX_SIMS) setTimeout(tick, 0); else setSimRun(false);
 };
 setTimeout(tick, 0);
-}, [numGames, simB0, simB1]);
+}, [numSims, simB0, simB1]);
 
 const runSimUntilStable = useCallback(() => {
 stopRef.current = false; setSimRun(true); setProg(0); setChartData(null);
@@ -1411,7 +1412,7 @@ const n0 = BOT[simB0].name, n1 = BOT[simB1].name;
 const STABLE_WINDOW = 20;
 const STABLE_THRESHOLD = Math.pow(10, -stabilizeDecimals) * (stabilizeDecimals === 0 ? 3 : 1);
 const MIN_GAMES = 200;
-const MAX_GAMES = numGames;
+const MAX_SIMS = numSims;
 const BATCH = 20;
 const isStable = () => {
   if (!useStabilized) return false;
@@ -1423,9 +1424,9 @@ const isStable = () => {
 };
 const tick = () => {
 if (stopRef.current) { setSimRun(false); return; }
-if (done >= MAX_GAMES) { setSimRun(false); setProg(100); return; }
+if (done >= MAX_SIMS) { setSimRun(false); setProg(100); return; }
 for (let i = 0; i < BATCH; i++) {
-if (done >= MAX_GAMES) break;
+if (done >= MAX_SIMS) break;
 const [gA, gB] = simulateGamePair(simB0, simB1);
 const winnerA = gA.gameLoser === 0 ? 1 : 0;
 const winnerB = gB.gameLoser === 0 ? 1 : 0;
@@ -1447,15 +1448,15 @@ const totalG = gw0 + gw1;
 if (totalG > 0) wrSnaps.push({ games: totalG, rate: (gw0 / totalG) * 100 });
 const totalPairs = sw0 + sw1 + splits;
 if (totalPairs > 0) swSnaps.push({ pairs: totalPairs, rate0: (sw0 / totalPairs) * 100, rate1: (sw1 / totalPairs) * 100 });
-const progress = Math.round((done / MAX_GAMES) * 100);
+const progress = Math.round((done / MAX_SIMS) * 100);
 setProg(Math.min(100, progress));
 setChartData(buildChartData(fd, dd, n0, n1));
 setRoundWins([rw0, rw1]); setGameWins([gw0, gw1]); setSweepWins([sw0, sw1, splits]); setTotalRounds(tr);
 setWinRateHistory([...wrSnaps]); setSweepRateHistory([...swSnaps]); setChinchonWins([cc0, cc1]);
-if (isStable() || done >= MAX_GAMES) { setSimRun(false); setProg(100); } else setTimeout(tick, 0);
+if (isStable() || done >= MAX_SIMS) { setSimRun(false); setProg(100); } else setTimeout(tick, 0);
 };
 setTimeout(tick, 0);
-}, [simB0, simB1, useStabilized, stabilizeDecimals, numGames]);
+}, [simB0, simB1, useStabilized, stabilizeDecimals, numSims]);
 
 const runTournament = useCallback(() => {
 if (new Set(tourBots).size < 4) return;
@@ -1480,7 +1481,7 @@ const chinchonGames = Array.from({ length: n }, () => Array(n).fill(0));
 const STABLE_WINDOW = 20;
 const STABLE_THRESHOLD = Math.pow(10, -tourStabilizeDecimals) * (tourStabilizeDecimals === 0 ? 3 : 1);
 const MIN_BATCHES = 200;
-const MAX_BATCHES = numGames;
+const MAX_BATCHES = numSims;
 const BATCH = 20;
 let pairIdx = 0, batchesDone = 0, currentWins = 0, currentTotal = 0, currentMirror = [0, 0], currentChinchones = [0, 0];
 const winSnapshots = [];
@@ -1557,7 +1558,7 @@ const tick = () => {
   setTimeout(tick, 0);
 };
 setTimeout(tick, 0);
-}, [tourBots, tourUseStabilized, tourStabilizeDecimals, numGames]);
+}, [tourBots, tourUseStabilized, tourStabilizeDecimals, numSims]);
 
 // -- Match viewer --
 const replay = replayPair ? (matchRound === "A" ? replayPair.replayA : replayPair.replayB) : null;
@@ -1667,7 +1668,19 @@ return (
 
   <div className="flex gap-0.5 bg-gray-900 rounded-lg p-1 mb-4">
     {[["sim", "Simulación"], ["torneo", "Torneo"], ["match", "Ver Partida"], ["play", "Jugar"], ["custom", "Bots"], ["reglas", "Reglas"]].map(([k, l]) => (
-      <button key={k} onClick={() => setTab(k)} className={`px-3 py-1.5 rounded-md text-xs font-medium transition-colors ${tab === k ? "bg-gray-700 text-white" : "text-gray-500 hover:text-gray-300"}`}>{l}</button>
+      <button key={k} onClick={() => {
+        // Stop and clear sim
+        stopRef.current = true;
+        setSimRun(false); setProg(0); setChartData(null);
+        setRoundWins([0, 0]); setGameWins([0, 0]); setSweepWins([0, 0, 0]); setTotalRounds(0);
+        setWinRateHistory([]); setSweepRateHistory([]); setChinchonWins([0, 0]);
+        setPromptCopied(false); setNewBotPromptCopied(false);
+        // Stop and clear tournament
+        stopTourRef.current = true;
+        setTourRunning(false); setTourProgress(0); setTourCurrentPair(null);
+        setTourCurrentStats(null); setTourResults(null);
+        setTab(k);
+      }} className={`px-3 py-1.5 rounded-md text-xs font-medium transition-colors ${tab === k ? "bg-gray-700 text-white" : "text-gray-500 hover:text-gray-300"}`}>{l}</button>
     ))}
   </div>
 
@@ -1675,21 +1688,21 @@ return (
   {tab === "sim" && (
     <div className="flex flex-col items-center w-full max-w-2xl">
       <div className="flex flex-col gap-3 mb-4 w-full">
-        <BotPicker label="Bot 1" value={simB0} onChange={(v) => { setSimB0(v); if (v === simB1) setSimB1(BOT.findIndex((_, i) => i !== v)); }} exclude={simB1} />
+        <BotPicker label="Bot 1" value={simB0} onChange={(v) => { setSimB0(v); if (v === simB1) setSimB1(BOT.findIndex((_, i) => i !== v)); stopRef.current = true; setSimRun(false); setProg(0); setChartData(null); setRoundWins([0, 0]); setGameWins([0, 0]); setSweepWins([0, 0, 0]); setTotalRounds(0); setWinRateHistory([]); setSweepRateHistory([]); setChinchonWins([0, 0]); }} exclude={simB1} />
         <div className="text-center text-gray-600 text-xs">vs</div>
-        <BotPicker label="Bot 2" value={simB1} onChange={(v) => { setSimB1(v); if (v === simB0) setSimB0(BOT.findIndex((_, i) => i !== v)); }} exclude={simB0} />
+        <BotPicker label="Bot 2" value={simB1} onChange={(v) => { setSimB1(v); if (v === simB0) setSimB0(BOT.findIndex((_, i) => i !== v)); stopRef.current = true; setSimRun(false); setProg(0); setChartData(null); setRoundWins([0, 0]); setGameWins([0, 0]); setSweepWins([0, 0, 0]); setTotalRounds(0); setWinRateHistory([]); setSweepRateHistory([]); setChinchonWins([0, 0]); }} exclude={simB0} />
       </div>
       <div className="flex gap-3 mb-2 text-center text-xs text-gray-500">
         <div className="rounded-lg px-3 py-1.5 border" style={{ borderColor: BOT[simB0].color + "40", color: BOT[simB0].color }}>{BOT[simB0].emoji} {BOT[simB0].desc}</div>
         <div className="rounded-lg px-3 py-1.5 border" style={{ borderColor: BOT[simB1].color + "40", color: BOT[simB1].color }}>{BOT[simB1].emoji} {BOT[simB1].desc}</div>
       </div>
       <div className="flex flex-col items-center gap-2 mb-2 w-full">
-        <label className="text-sm text-gray-400">Partidas</label>
+        <label className="text-sm text-gray-400">Simulaciones</label>
         <div className="flex flex-wrap gap-1.5 justify-center">
           {[10, 50, 100, 500, 1000, 5000, 10000, 50000, 100000].map(n => (
-            <button key={n} onClick={() => setNumGames(n)} disabled={simRun}
+            <button key={n} onClick={() => setNumSims(n)} disabled={simRun}
               className={`px-2.5 py-1 rounded-md text-xs font-medium border transition-all disabled:opacity-40
-                ${numGames === n ? "border-emerald-500 text-emerald-400 bg-emerald-500/10" : "border-gray-700 text-gray-400 hover:border-gray-500"}`}>
+                ${numSims === n ? "border-emerald-500 text-emerald-400 bg-emerald-500/10" : "border-gray-700 text-gray-400 hover:border-gray-500"}`}>
               {n >= 1000 ? `${n / 1000}k` : n}
             </button>
           ))}
@@ -1717,12 +1730,12 @@ return (
 
         {!simRun ? (
           <div className="flex gap-2 mt-1 flex-wrap justify-center">
-            <button onClick={runSim} className="bg-emerald-600 hover:bg-emerald-500 text-white px-5 py-1.5 rounded-md text-sm font-semibold active:scale-95">Simular {numGames >= 1000 ? `${numGames / 1000}k` : numGames} partidas</button>
+            <button onClick={runSim} className="bg-emerald-600 hover:bg-emerald-500 text-white px-5 py-1.5 rounded-md text-sm font-semibold active:scale-95">Simular {numSims >= 1000 ? `${numSims / 1000}k` : numSims} simulaciones</button>
             <button onClick={runSimUntilStable} className="bg-violet-700 hover:bg-violet-600 text-white px-4 py-1.5 rounded-md text-sm font-semibold active:scale-95" title="Corre hasta que el winrate se estabilice">⚖️ Auto-estabilizar</button>
           </div>
         ) : <button onClick={() => { stopRef.current = true; }} className="bg-red-600 hover:bg-red-500 text-white px-5 py-1.5 rounded-md text-sm font-semibold mt-1">Parar ({prog}%)</button>}
       </div>
-      <div className="text-xs text-gray-600 mb-3 text-center">Cada sim = 2 partidas simultáneas con rondas espejo · Chinchón = gana partida</div>
+      <div className="text-xs text-gray-600 mb-3 text-center">Cada simulación = 2 partidas espejo (misma repartida, manos invertidas) · Chinchón = gana partida</div>
       {simRun && <div className="w-full h-1 bg-gray-800 rounded-full mb-3 overflow-hidden"><div className="h-full bg-gradient-to-r from-emerald-500 to-violet-500 transition-all" style={{ width: `${prog}%` }} /></div>}
 
       {total > 0 && (
@@ -1750,7 +1763,7 @@ return (
       {(sweepWins[0] + sweepWins[1] + sweepWins[2]) > 0 && (
         <div className="w-full bg-gray-900 border border-yellow-900/50 rounded-lg p-3 mb-4">
           <h2 className="text-xs text-yellow-600 text-center mb-1 uppercase tracking-wider">Doble espejo ganado</h2>
-          <p className="text-xs text-gray-600 text-center mb-3">Gana ambas partidas con la misma repartida</p>
+          <p className="text-xs text-gray-600 text-center mb-3">Gana ambas partidas de la misma simulación espejo</p>
           <div className="flex items-center justify-between">
             <div className="text-center flex-1">
               <div className="text-lg font-bold" style={{ color: BOT[simB0].color }}>{sweepWins[0]}</div>
@@ -1758,7 +1771,7 @@ return (
             </div>
             <div className="text-center px-3">
               <div className="text-xs text-gray-500">{sweepWins[2]} empates</div>
-              <div className="text-xs text-gray-600">{sweepWins[0] + sweepWins[1] + sweepWins[2]} pares</div>
+              <div className="text-xs text-gray-600">{sweepWins[0] + sweepWins[1] + sweepWins[2]} simulaciones</div>
             </div>
             <div className="text-center flex-1">
               <div className="text-lg font-bold" style={{ color: BOT[simB1].color }}>{sweepWins[1]}</div>
@@ -1801,8 +1814,8 @@ return (
             </div>
             <p className="text-xs text-gray-600 text-center mb-2">
               {chartTab === "winrate"
-                ? "Partidas ganadas acumuladas · si la línea se estabiliza, la muestra es suficiente"
-                : "% de corridas donde cada bot gana ambas partidas espejo (sin empates)"}
+                ? "Partidas ganadas acumuladas por simulación · si la línea se estabiliza, la muestra es suficiente"
+                : "% de simulaciones donde cada bot gana ambas partidas espejo (sin empates)"}
             </p>
             <RateChart data={sliced} bot0={BOT[simB0]} bot1={BOT[simB1]} />
             <div className="flex justify-center gap-4 mt-1.5 text-xs">
@@ -1865,7 +1878,7 @@ return (
             const prompt = generateSimPrompt(
               getBotConfig(simB0, customConfigs),
               getBotConfig(simB1, customConfigs),
-              { gameWins, roundWins, sweepWins, chinchonWins, totalRounds, numGames }
+              { gameWins, roundWins, sweepWins, chinchonWins, totalRounds, numSims }
             );
             navigator.clipboard.writeText(prompt);
             setPromptCopied(true);
@@ -1878,7 +1891,7 @@ return (
           const simContext = total > 0 ? generateSimPrompt(
             getBotConfig(simB0, customConfigs),
             getBotConfig(simB1, customConfigs),
-            { gameWins, roundWins, sweepWins, chinchonWins, totalRounds, numGames }
+            { gameWins, roundWins, sweepWins, chinchonWins, totalRounds, numSims }
           ) : undefined;
           navigator.clipboard.writeText(generateNewBotPrompt(simContext));
           setNewBotPromptCopied(true);
