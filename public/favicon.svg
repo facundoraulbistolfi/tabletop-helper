@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="Ludario">
+  <rect width="64" height="64" rx="14" fill="#0f241d" />
+  <rect x="4" y="4" width="56" height="56" rx="12" fill="none" stroke="#f0d191" stroke-width="2" />
+
+  <g transform="translate(16 14)">
+    <rect x="0" y="6" width="10" height="30" rx="3" fill="#d8c39a" />
+    <rect x="1.5" y="9" width="2" height="24" rx="1" fill="#8a6a2d" opacity="0.55" />
+    <rect x="5.5" y="10" width="2.5" height="22" rx="1.25" fill="#f9f2dd" opacity="0.95" />
+
+    <rect x="11" y="2" width="11" height="34" rx="3" fill="#8f4f2d" />
+    <rect x="13" y="6" width="2.25" height="26" rx="1.125" fill="#f0d191" opacity="0.45" />
+    <rect x="17" y="7" width="2.5" height="24" rx="1.25" fill="#f6e7c2" opacity="0.95" />
+
+    <rect x="23" y="8" width="10" height="28" rx="3" fill="#59755d" />
+    <rect x="24.5" y="11" width="2" height="22" rx="1" fill="#0f241d" opacity="0.3" />
+    <rect x="28.5" y="12" width="2.5" height="20" rx="1.25" fill="#edf2dc" opacity="0.95" />
+  </g>
+</svg>

@@ -14,13 +14,36 @@ export const FILTER_TAGS = [
 
 export type FilterTag = (typeof FILTER_TAGS)[number]
 
+export type CoverCollection =
+  | 'study'
+  | 'criollo'
+  | 'laboratory'
+  | 'ledger'
+  | 'arcade'
+  | 'retro98'
+  | 'casino'
+
+export type CoverStyle =
+  | 'plate'
+  | 'filigree'
+  | 'stamped'
+  | 'ledger'
+  | 'neon'
+  | 'window'
+  | 'marquee'
+
 type CatalogItemBase = {
   id: string
   icon: string
   tags: FilterTag[]
   chips: string[]
   title: string
+  subtitle: string
   description: string
+  collection: CoverCollection
+  coverStyle: CoverStyle
+  accent: string
+  shelfLabel: string
 }
 
 export type InternalCatalogItem = CatalogItemBase & {
@@ -50,7 +73,12 @@ export const CATALOG_ITEMS: CatalogItem[] = [
     tags: ['Herramienta'],
     chips: ['Solver', 'Lógica'],
     title: 'Sudoku Killer',
+    subtitle: 'Resuelve cages, filtra dígitos y salta a PDFs de KrazyDad.',
     description: 'Solver de cages con filtros de dígitos, restricciones entre pares y acceso rápido a PDFs de KrazyDad.',
+    collection: 'study',
+    coverStyle: 'plate',
+    accent: '#d3b36a',
+    shelfLabel: 'Estudio',
   },
   {
     id: 'external:dosto',
@@ -60,7 +88,12 @@ export const CATALOG_ITEMS: CatalogItem[] = [
     tags: ['Libros', 'Externo'],
     chips: ['Lectura', 'GitHub Pages'],
     title: 'Dosto',
+    subtitle: 'Explora a Dostoievski con progreso, portadas y filtros temáticos.',
     description: 'Biblioteca personal interactiva de Dostoievski, con portadas ilustradas, progreso de lectura y filtros temáticos.',
+    collection: 'study',
+    coverStyle: 'filigree',
+    accent: '#9b6f3f',
+    shelfLabel: 'Lectura',
   },
   {
     id: '/tools/chinchon',
@@ -70,7 +103,12 @@ export const CATALOG_ITEMS: CatalogItem[] = [
     tags: ['Anotador', 'Registro', 'Cartas', 'Scoreboard'],
     chips: ['Persistencia'],
     title: 'Anotador de Chinchón',
+    subtitle: 'Marca rondas, chinchón y -10 con guardado de partida.',
     description: 'Configura jugadores, suma rondas, marca chinchón o -10, y guarda/carga el estado de la partida.',
+    collection: 'criollo',
+    coverStyle: 'filigree',
+    accent: '#d77f45',
+    shelfLabel: 'Naipes',
   },
   {
     id: '/tools/truco',
@@ -80,17 +118,27 @@ export const CATALOG_ITEMS: CatalogItem[] = [
     tags: ['Anotador', 'Cartas', 'Scoreboard'],
     chips: ['Buenas/Malas'],
     title: 'Anotador de Truco',
+    subtitle: 'Lleva buenas y malas con un tanteador criollo bien rápido.',
     description: 'Marcador de truco en palitos con buenas y malas, pensado para partidas rápidas entre nosotros y ellos.',
+    collection: 'criollo',
+    coverStyle: 'plate',
+    accent: '#d9a23e',
+    shelfLabel: 'Criollo',
   },
   {
     id: '/tools/chinchon-lab',
     kind: 'internal',
     to: '/tools/chinchon-lab',
-    icon: '🎯',
+    icon: '🧪',
     tags: ['Herramienta', 'Registro', 'Cartas'],
     chips: ['Arena', 'Bots'],
     title: 'Chinchón Lab',
+    subtitle: 'Prueba bots, ensaya cortes y afina descarte en modo laboratorio.',
     description: 'Arena de bots y modo de juego para practicar cortes, chinchón y estrategia de descarte.',
+    collection: 'laboratory',
+    coverStyle: 'stamped',
+    accent: '#63d2ab',
+    shelfLabel: 'Lab',
   },
   {
     id: '/tools/pacman-memory',
@@ -100,7 +148,12 @@ export const CATALOG_ITEMS: CatalogItem[] = [
     tags: ['Juego', 'PacMan'],
     chips: ['Memoria', 'Multijugador'],
     title: 'Pac-Memory',
+    subtitle: 'Memoria arcade multijugador con fantasmas, frutas y packs retro.',
     description: 'Juego de memoria con sprites retro de Pac-Man, Space Invaders, Tetris y más. Para 2-3 jugadores.',
+    collection: 'arcade',
+    coverStyle: 'neon',
+    accent: '#53f4ff',
+    shelfLabel: 'Arcade',
   },
   {
     id: '/tools/point-counter',
@@ -110,7 +163,12 @@ export const CATALOG_ITEMS: CatalogItem[] = [
     tags: ['Anotador', 'Registro', 'Scoreboard'],
     chips: ['Tap', 'Multijugador'],
     title: 'Contador de Puntos',
+    subtitle: 'Suma puntos por jugador con taps rápidos y toolbox avanzada.',
     description: 'Marcador genérico por jugador con botones de color, suma rápida por toque y suma avanzada con long press.',
+    collection: 'ledger',
+    coverStyle: 'ledger',
+    accent: '#68c7a6',
+    shelfLabel: 'Mesa',
   },
   {
     id: '/tools/pacman-ludo',
@@ -120,7 +178,12 @@ export const CATALOG_ITEMS: CatalogItem[] = [
     tags: ['Juego', 'PacMan'],
     chips: ['Tablero', 'Multijugador'],
     title: 'Pac-Ludo',
+    subtitle: 'Corre al centro con fantasmas, capturas y caos de tablero.',
     description: 'Ludo temático de Pac-Man: movés fantasmas por el tablero, capturás rivales y llegás al centro.',
+    collection: 'arcade',
+    coverStyle: 'neon',
+    accent: '#ffd34c',
+    shelfLabel: 'Tablero',
   },
   {
     id: 'external:win98maze',
@@ -130,7 +193,12 @@ export const CATALOG_ITEMS: CatalogItem[] = [
     tags: ['Juego', 'Windows 98', 'Externo'],
     chips: ['Laberinto'],
     title: 'Win98 Maze',
+    subtitle: 'Recorre un laberinto 3D noventoso con minimapa configurable.',
     description: 'Laberinto 3D en primera persona con estética Windows 98, minimapa configurable y atmósfera retro.',
+    collection: 'retro98',
+    coverStyle: 'window',
+    accent: '#12d1c8',
+    shelfLabel: 'Win98',
   },
   {
     id: 'external:win98-battleship',
@@ -140,7 +208,12 @@ export const CATALOG_ITEMS: CatalogItem[] = [
     tags: ['Juego', 'Windows 98', 'Externo'],
     chips: ['Batalla Naval'],
     title: 'Batalla Naval 98',
+    subtitle: 'Hunde flotas con power-ups y estética Windows 98.',
     description: 'Batalla Naval con look Windows 98, power-ups, sonido retro y modos contra la compu o para dos jugadores.',
+    collection: 'retro98',
+    coverStyle: 'window',
+    accent: '#4a8fff',
+    shelfLabel: 'Win98',
   },
   {
     id: 'external:toca-toca',
@@ -150,7 +223,12 @@ export const CATALOG_ITEMS: CatalogItem[] = [
     tags: ['Selector', 'Externo'],
     chips: ['Ruleta', 'Casino'],
     title: 'Toca Toca',
+    subtitle: 'Gira una ruleta configurable para decidir turnos al instante.',
     description: 'Ruleta web configurable para decidir a quién le toca, con estadísticas persistentes y tono de casino.',
+    collection: 'casino',
+    coverStyle: 'marquee',
+    accent: '#f2c55e',
+    shelfLabel: 'Casino',
   },
 ]
 
@@ -228,7 +306,9 @@ export function catalogItemMatchesSearch(item: CatalogItem, query: string): bool
 
   const haystack = normalizeSearchTerm([
     item.title,
+    item.subtitle,
     item.description,
+    item.shelfLabel,
     ...item.tags,
     ...item.chips,
   ].join(' '))

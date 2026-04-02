@@ -1,4 +1,4 @@
-import { useDeferredValue, useState } from 'react'
+import { useDeferredValue, useState, type CSSProperties } from 'react'
 import { Link } from 'react-router-dom'
 import {
   CATALOG_ITEMS,
@@ -79,6 +79,7 @@ function HomeDivider({ className }: { className?: string }) {
 export default function Home() {
   const [activeFilter, setActiveFilter] = useState<FilterTag | null>(null)
   const [favorites, setFavorites] = useState<Set<string>>(loadFavorites)
+  const [flippedCards, setFlippedCards] = useState<Set<string>>(() => new Set())
   const [searchQuery, setSearchQuery] = useState('')
   const deferredSearchQuery = useDeferredValue(searchQuery)
   const normalizedSearch = normalizeSearchTerm(searchQuery)
@@ -106,6 +107,41 @@ export default function Home() {
 
   function warmCatalogItem(item: CatalogItem) {
     if (item.kind === 'internal') prefetchRoute(item.to)
+  }
+
+  function toggleCardFace(id: string) {
+    setFlippedCards(prev => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      return next
+    })
+  }
+
+  function renderCatalogAction(item: CatalogItem, className: string, label: string) {
+    if (item.kind === 'external') {
+      return (
+        <a
+          className={className}
+          href={item.href}
+          target="_blank"
+          rel="noopener noreferrer"
+        >
+          {label}
+        </a>
+      )
+    }
+
+    return (
+      <Link
+        className={className}
+        to={item.to}
+        onMouseEnter={() => warmCatalogItem(item)}
+        onFocus={() => warmCatalogItem(item)}
+      >
+        {label}
+      </Link>
+    )
   }
 
   function openFavoritesView() {
@@ -151,64 +187,92 @@ export default function Home() {
 
   function renderCatalogFolio(item: CatalogItem) {
     const isFavorite = favorites.has(item.id)
-    const actionLabel = item.kind === 'external' ? 'Abrir portal' : 'Abrir herramienta'
+    const isFlipped = flippedCards.has(item.id)
+    const actionLabel = item.kind === 'external' ? 'Visitar' : 'Abrir'
     const primaryTag = item.tags[0]
-    const displayChips = [...new Set([...item.tags.slice(1), ...item.chips])].slice(0, 4)
+    const detailChips = [...new Set([...item.chips, ...item.tags.slice(1)])].slice(0, 4)
+    const bookStyle = { '--book-accent': item.accent } as CSSProperties
 
     return (
       <article
         key={item.id}
-        className={`home-folio${isFavorite ? ' is-favorite' : ''}${item.kind === 'external' ? ' home-folio--external' : ''}`}
+        className={`home-book home-book--${item.collection} home-book--${item.coverStyle}${isFavorite ? ' is-favorite' : ''}${item.kind === 'external' ? ' is-external' : ''}${isFlipped ? ' is-flipped' : ''}`}
+        style={bookStyle}
       >
-        <div className="home-folio__topline">
-          <div className="home-folio__medallion" aria-hidden="true">
-            <span>{item.icon}</span>
-          </div>
-          <div className="home-folio__meta">
-            <span className="home-folio__category">{primaryTag}</span>
-            <div className="home-folio__chips">
-              {displayChips.map(chip => (
-                <span key={chip} className="home-folio__chip">{chip}</span>
-              ))}
+        <div className="home-book__spine" aria-hidden="true" />
+        <button
+          type="button"
+          className={`home-book__bookmark${isFavorite ? ' is-active' : ''}`}
+          aria-label={isFavorite ? `Quitar ${item.title} de favoritos` : `Agregar ${item.title} a favoritos`}
+          aria-pressed={isFavorite}
+          onClick={() => toggleFavorite(item.id)}
+        >
+          <span aria-hidden="true">{isFavorite ? '★' : '✦'}</span>
+        </button>
+        <button
+          type="button"
+          className={`home-book__flip-corner${isFlipped ? ' is-active' : ''}`}
+          aria-label={isFlipped ? `Volver a la tapa de ${item.title}` : `Ver más info de ${item.title}`}
+          aria-pressed={isFlipped}
+          aria-expanded={isFlipped}
+          onClick={() => toggleCardFace(item.id)}
+        >
+          <span className="home-book__flip-corner-fold" aria-hidden="true" />
+          <span className="home-book__flip-corner-mark" aria-hidden="true">{isFlipped ? '↺' : 'i'}</span>
+        </button>
+
+        <div className="home-book__scene">
+          <div className="home-book__face home-book__face--front" aria-hidden={isFlipped}>
+            <div className="home-book__cover-top">
+              <div className="home-book__cover-labels">
+                <span className="home-book__category">{primaryTag}</span>
+              </div>
+              {item.kind === 'external' && (
+                <span className="home-book__seal" title="Enlace externo" aria-label="Enlace externo">
+                  <span aria-hidden="true">↗</span>
+                  <span className="home-book__seal-label" aria-hidden="true">ext</span>
+                </span>
+              )}
+            </div>
+
+            <div className="home-book__title-block">
+              <span className="home-book__symbol" aria-hidden="true">{item.icon}</span>
+              <h3>{item.title}</h3>
+              <p className="home-book__byline">{item.subtitle}</p>
+            </div>
+
+            <div className="home-book__ornament" aria-hidden="true">
+              <span />
+              <span />
+              <span />
+            </div>
+
+            <div className="home-book__face-actions">
+              {renderCatalogAction(item, 'cta home-cta home-cta--book', actionLabel)}
             </div>
           </div>
-          {item.kind === 'external' && <span className="home-folio__badge">↗ Externo</span>}
-          <button
-            type="button"
-            className={`home-folio__favorite${isFavorite ? ' is-active' : ''}`}
-            aria-label={isFavorite ? 'Quitar de favoritos' : 'Agregar a favoritos'}
-            aria-pressed={isFavorite}
-            onClick={() => toggleFavorite(item.id)}
-          >
-            {isFavorite ? '★' : '☆'}
-          </button>
-        </div>
 
-        <div className="home-folio__body">
-          <h3>{item.title}</h3>
-          <p>{item.description}</p>
-        </div>
+          <div className="home-book__face home-book__face--back" aria-hidden={!isFlipped}>
+            <div className="home-book__back-top">
+              <span className="home-book__back-kicker">{`Coleccion ${item.shelfLabel}`}</span>
+              <span className="home-book__back-icon" aria-hidden="true">{item.icon}</span>
+            </div>
 
-        <div className="home-folio__footer">
-          {item.kind === 'external' ? (
-            <a
-              className="cta home-cta home-cta--folio"
-              href={item.href}
-              target="_blank"
-              rel="noopener noreferrer"
-            >
-              {actionLabel}
-            </a>
-          ) : (
-            <Link
-              className="cta home-cta home-cta--folio"
-              to={item.to}
-              onMouseEnter={() => warmCatalogItem(item)}
-              onFocus={() => warmCatalogItem(item)}
-            >
-              {actionLabel}
-            </Link>
-          )}
+            <div className="home-book__back-copy">
+              <h3>{item.title}</h3>
+              <p>{item.description}</p>
+            </div>
+
+            <div className="home-book__chips">
+              {detailChips.map(chip => (
+                <span key={chip} className="home-book__chip">{chip}</span>
+              ))}
+            </div>
+
+            <div className="home-book__face-actions">
+              {renderCatalogAction(item, 'cta home-cta home-cta--book', actionLabel)}
+            </div>
+          </div>
         </div>
       </article>
     )
@@ -350,7 +414,7 @@ export default function Home() {
         </div>
 
         {orderedItems.length > 0 ? (
-          <div className="home-folio-grid home-folio-grid--library" aria-label="Biblioteca completa">
+          <div className="home-book-grid home-book-grid--library" aria-label="Biblioteca completa">
             {orderedItems.map(renderCatalogFolio)}
           </div>
         ) : (

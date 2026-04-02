@@ -27,6 +27,13 @@ describe('home-catalog helpers', () => {
     expect(visible[0]?.id).toBe('external:dosto')
   })
 
+  it('lets shelf labels participate in the same search surface', () => {
+    const visible = getVisibleCatalogItems(CATALOG_ITEMS, null, 'mesa')
+
+    expect(visible).toHaveLength(1)
+    expect(visible[0]?.id).toBe('/tools/point-counter')
+  })
+
   it('maps external portals into the same feature filters', () => {
     const visible = getVisibleCatalogItems(CATALOG_ITEMS, 'Windows 98', '')
 
@@ -63,5 +70,26 @@ describe('home-catalog helpers', () => {
     const internalItem = CATALOG_ITEMS.find(item => item.id === '/tools/chinchon')
 
     expect(internalItem?.kind).toBe('internal')
+  })
+
+  it('adds editorial cover metadata to every catalog item', () => {
+    expect(CATALOG_ITEMS.every(item => (
+      item.collection.length > 0
+      && item.coverStyle.length > 0
+      && /^#[0-9a-f]{6}$/i.test(item.accent)
+      && item.shelfLabel.length > 0
+      && item.subtitle.length > 0
+    ))).toBe(true)
+  })
+
+  it('keeps curated pairs inside the same visual collections', () => {
+    const byId = new Map(CATALOG_ITEMS.map(item => [item.id, item]))
+
+    expect(byId.get('/tools/sudoku-killer')?.collection).toBe('study')
+    expect(byId.get('external:dosto')?.collection).toBe('study')
+    expect(byId.get('/tools/pacman-memory')?.collection).toBe('arcade')
+    expect(byId.get('/tools/pacman-ludo')?.collection).toBe('arcade')
+    expect(byId.get('external:win98maze')?.collection).toBe('retro98')
+    expect(byId.get('external:win98-battleship')?.collection).toBe('retro98')
   })
 })
