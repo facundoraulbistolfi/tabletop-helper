@@ -39,7 +39,7 @@ const DIVERTIDO_WEIGHTS = [1, 2, 3, 4, 5, 6];
 const HARDCORE_WEIGHTS = [1, 2, 4, 8, 16, 32];
 const GHOST_CHANCE: Record<string, number> = { divertido: 20, hardcore: 10 };
 
-const SECTION_COLORS = ["#AA00FF", "#0088FF", "#00CC44", "#FFEE00", "#FF8800", "#FF0000"];
+const SECTION_COLORS = ["#2121DE", "#FF0000", "#00FFFF", "#FFB8FF", "#FF7722", "#FFE000"];
 
 const GRID = 15;
 const PLAYERS: PlayerConfig[] = [
@@ -583,7 +583,7 @@ if (phase !== "roll" || rouletteSpinning) return;
 setRouletteOpen(true);
 setRouletteSpinning(true);
 setRouletteResult(null);
-const initialSpeed = 8 + Math.random() * 6; // deg per frame (~14-20 deg/frame at 60fps)
+const initialSpeed = (8 + Math.random() * 6) * 0.8; // deg per frame (~11-16 deg/frame at 60fps, 20% slower)
 rouletteSpeedRef.current = initialSpeed;
 rouletteStartRef.current = performance.now();
 const startAngle = rouletteAngle;
@@ -637,9 +637,20 @@ rouletteRAF.current = requestAnimationFrame(decelerate);
 
 function handleRouletteStop() {
 if (!rouletteSpinning) return;
-// Stop the constant-speed loop and switch to deceleration
 if (rouletteRAF.current) cancelAnimationFrame(rouletteRAF.current);
-stopRoulette(rouletteAngle);
+rouletteRAF.current = null;
+const angle = rouletteAngle;
+const isBase = allInBase(tokens[cur] || []);
+const sections = getRouletteConfig(gameMode, isBase);
+const result = resolveRouletteAngle(angle, sections);
+setRouletteResult(result);
+setDice(result || 1);
+setRouletteSpinning(false);
+timeoutRef.current = setTimeout(() => {
+  setRouletteOpen(false);
+  setRouletteResult(null);
+  processRollResult(result);
+}, 1200);
 }
 
 function handleTokenClick(tok: Token, pid: number) {
