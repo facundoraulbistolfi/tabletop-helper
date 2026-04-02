@@ -63,7 +63,7 @@ const PCFG: PcfgEntry[] = [
 { startIdx:40, homeStretch:[[13,7],[12,7],[11,7],[10,7],[9,7],[8,7]],basePos:[[11,2],[11,3],[12,2],[12,3]], safeIdx:40 },
 ];
 
-const SAFE = new Set([1, 14, 27, 40, 9, 22, 35, 48]);
+const SAFE = new Set([1, 14, 27, 40]);
 
 // ── Pure helpers ──
 function stepsFromStart(pid: number, pathIdx: number): number {
@@ -92,7 +92,7 @@ return c;
 }
 
 function allInBase(playerTokens: Token[]): boolean {
-return playerTokens.every(t => t.state === "base");
+return !playerTokens.some(t => t.state === "path");
 }
 
 // Check if a token on the path has an enemy 1 step behind it
@@ -583,7 +583,7 @@ if (phase !== "roll" || rouletteSpinning) return;
 setRouletteOpen(true);
 setRouletteSpinning(true);
 setRouletteResult(null);
-const initialSpeed = (8 + Math.random() * 6) * 0.8; // deg per frame (~11-16 deg/frame at 60fps, 20% slower)
+const initialSpeed = (8 + Math.random() * 6) * 0.68; // deg per frame (35% slower than base)
 rouletteSpeedRef.current = initialSpeed;
 rouletteStartRef.current = performance.now();
 const startAngle = rouletteAngle;
