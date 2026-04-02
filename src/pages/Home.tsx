@@ -1,4 +1,4 @@
-import { useDeferredValue, useState, type CSSProperties } from 'react'
+import { useDeferredValue, useEffect, useId, useState, type CSSProperties } from 'react'
 import { Link } from 'react-router-dom'
 import {
   CATALOG_ITEMS,
@@ -79,8 +79,9 @@ function HomeDivider({ className }: { className?: string }) {
 export default function Home() {
   const [activeFilter, setActiveFilter] = useState<FilterTag | null>(null)
   const [favorites, setFavorites] = useState<Set<string>>(loadFavorites)
-  const [flippedCards, setFlippedCards] = useState<Set<string>>(() => new Set())
+  const [activeInfoItem, setActiveInfoItem] = useState<CatalogItem | null>(null)
   const [searchQuery, setSearchQuery] = useState('')
+  const infoDialogTitleId = useId()
   const deferredSearchQuery = useDeferredValue(searchQuery)
   const normalizedSearch = normalizeSearchTerm(searchQuery)
   const favoriteItems = getFavoriteCatalogItems(CATALOG_ITEMS, favorites)
@@ -109,16 +110,47 @@ export default function Home() {
     if (item.kind === 'internal') prefetchRoute(item.to)
   }
 
-  function toggleCardFace(id: string) {
-    setFlippedCards(prev => {
-      const next = new Set(prev)
-      if (next.has(id)) next.delete(id)
-      else next.add(id)
-      return next
-    })
+  useEffect(() => {
+    if (!activeInfoItem) return
+
+    const previousOverflow = document.body.style.overflow
+    document.body.style.overflow = 'hidden'
+
+    function handleKeyDown(event: KeyboardEvent) {
+      if (event.key === 'Escape') {
+        setActiveInfoItem(null)
+      }
+    }
+
+    window.addEventListener('keydown', handleKeyDown)
+
+    return () => {
+      document.body.style.overflow = previousOverflow
+      window.removeEventListener('keydown', handleKeyDown)
+    }
+  }, [activeInfoItem])
+
+  function getCatalogVariantClassNames(item: CatalogItem) {
+    const isNotebook = item.tags.includes('Anotador')
+    const isClassicEdition = item.tags.includes('Libros')
+
+    return `home-book--${item.collection} home-book--${item.coverStyle}${isNotebook ? ' home-book--notebook' : ''}${isClassicEdition ? ' home-book--classic-edition' : ''}${item.kind === 'external' ? ' is-external' : ''}`
   }
 
-  function renderCatalogAction(item: CatalogItem, className: string, label: string) {
+  function openInfoModal(item: CatalogItem) {
+    setActiveInfoItem(item)
+  }
+
+  function closeInfoModal() {
+    setActiveInfoItem(null)
+  }
+
+  function renderCatalogAction(
+    item: CatalogItem,
+    className: string,
+    label: string,
+    onClick?: () => void,
+  ) {
     if (item.kind === 'external') {
       return (
         <a
@@ -126,6 +158,7 @@ export default function Home() {
           href={item.href}
           target="_blank"
           rel="noopener noreferrer"
+          onClick={onClick}
         >
           {label}
         </a>
@@ -138,6 +171,7 @@ export default function Home() {
         to={item.to}
         onMouseEnter={() => warmCatalogItem(item)}
         onFocus={() => warmCatalogItem(item)}
+        onClick={onClick}
       >
         {label}
       </Link>
@@ -187,19 +221,17 @@ export default function Home() {
 
   function renderCatalogFolio(item: CatalogItem) {
     const isFavorite = favorites.has(item.id)
-    const isFlipped = flippedCards.has(item.id)
+    const isInfoOpen = activeInfoItem?.id === item.id
     const actionLabel = item.kind === 'external' ? 'Visitar' : 'Abrir'
     const primaryTag = item.tags[0]
-    const detailChips = [...new Set([...item.chips, ...item.tags.slice(1)])].slice(0, 4)
     const bookStyle = { '--book-accent': item.accent } as CSSProperties
 
     return (
       <article
         key={item.id}
-        className={`home-book home-book--${item.collection} home-book--${item.coverStyle}${isFavorite ? ' is-favorite' : ''}${item.kind === 'external' ? ' is-external' : ''}${isFlipped ? ' is-flipped' : ''}`}
+        className={`home-book ${getCatalogVariantClassNames(item)}${isFavorite ? ' is-favorite' : ''}`}
         style={bookStyle}
       >
-        <div className="home-book__spine" aria-hidden="true" />
         <button
           type="button"
           className={`home-book__bookmark${isFavorite ? ' is-active' : ''}`}
@@ -211,18 +243,28 @@ export default function Home() {
         </button>
         <button
           type="button"
-          className={`home-book__flip-corner${isFlipped ? ' is-active' : ''}`}
-          aria-label={isFlipped ? `Volver a la tapa de ${item.title}` : `Ver más info de ${item.title}`}
-          aria-pressed={isFlipped}
-          aria-expanded={isFlipped}
-          onClick={() => toggleCardFace(item.id)}
+          className="home-book__flip-corner"
+          aria-label={`Ver detalles de ${item.title}`}
+          aria-haspopup="dialog"
+          aria-controls={activeInfoItem ? 'home-info-dialog' : undefined}
+          aria-expanded={isInfoOpen}
+          onClick={() => openInfoModal(item)}
         >
           <span className="home-book__flip-corner-fold" aria-hidden="true" />
-          <span className="home-book__flip-corner-mark" aria-hidden="true">{isFlipped ? '↺' : 'i'}</span>
+          <span className="home-book__flip-corner-mark" aria-hidden="true">i</span>
         </button>
 
         <div className="home-book__scene">
-          <div className="home-book__face home-book__face--front" aria-hidden={isFlipped}>
+          <div className="home-book__face home-book__face--front">
+            {item.tags.includes('Libros') && (
+              <div className="home-book__classic-emboss" aria-hidden="true">
+                <span className="home-book__classic-corner home-book__classic-corner--tl" />
+                <span className="home-book__classic-corner home-book__classic-corner--tr" />
+                <span className="home-book__classic-corner home-book__classic-corner--bl" />
+                <span className="home-book__classic-corner home-book__classic-corner--br" />
+                <span className="home-book__classic-medallion" />
+              </div>
+            )}
             <div className="home-book__cover-top">
               <div className="home-book__cover-labels">
                 <span className="home-book__category">{primaryTag}</span>
@@ -251,28 +293,6 @@ export default function Home() {
               {renderCatalogAction(item, 'cta home-cta home-cta--book', actionLabel)}
             </div>
           </div>
-
-          <div className="home-book__face home-book__face--back" aria-hidden={!isFlipped}>
-            <div className="home-book__back-top">
-              <span className="home-book__back-kicker">{`Coleccion ${item.shelfLabel}`}</span>
-              <span className="home-book__back-icon" aria-hidden="true">{item.icon}</span>
-            </div>
-
-            <div className="home-book__back-copy">
-              <h3>{item.title}</h3>
-              <p>{item.description}</p>
-            </div>
-
-            <div className="home-book__chips">
-              {detailChips.map(chip => (
-                <span key={chip} className="home-book__chip">{chip}</span>
-              ))}
-            </div>
-
-            <div className="home-book__face-actions">
-              {renderCatalogAction(item, 'cta home-cta home-cta--book', actionLabel)}
-            </div>
-          </div>
         </div>
       </article>
     )
@@ -286,6 +306,10 @@ export default function Home() {
   const emptyCopy = hasSearch
     ? 'Proba con otro nombre, una etiqueta o cambiando el filtro activo.'
     : 'Probá volver a "Todos" para revisar el compendio completo.'
+  const infoDetailChips = activeInfoItem
+    ? [...new Set([...activeInfoItem.chips, ...activeInfoItem.tags])]
+    : []
+  const infoPrimaryActionLabel = activeInfoItem?.kind === 'external' ? 'Visitar' : 'Abrir'
 
   return (
     <main className="page page--home" id="main-content">
@@ -441,6 +465,81 @@ export default function Home() {
           .
         </p>
       </footer>
+
+      {activeInfoItem && (
+        <div
+          className="home-info-modal"
+          onClick={closeInfoModal}
+        >
+          <section
+            id="home-info-dialog"
+            className={`home-info-sheet ${getCatalogVariantClassNames(activeInfoItem)}`}
+            style={{ '--book-accent': activeInfoItem.accent } as CSSProperties}
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby={infoDialogTitleId}
+            onClick={event => event.stopPropagation()}
+          >
+            <button
+              type="button"
+              className="home-info-sheet__close"
+              aria-label={`Cerrar detalles de ${activeInfoItem.title}`}
+              autoFocus
+              onClick={closeInfoModal}
+            >
+              ×
+            </button>
+
+            <div className="home-info-sheet__header">
+              <div className="home-info-sheet__eyebrow-row">
+                <span className="home-info-sheet__eyebrow">{activeInfoItem.tags[0]}</span>
+                <span className="home-info-sheet__kind">
+                  {activeInfoItem.kind === 'external' ? 'Portal externo' : 'Tool interna'}
+                </span>
+              </div>
+              <div className="home-info-sheet__title-row">
+                <span className="home-info-sheet__icon" aria-hidden="true">{activeInfoItem.icon}</span>
+                <div className="home-info-sheet__title-block">
+                  <h3 id={infoDialogTitleId}>{activeInfoItem.title}</h3>
+                  <p>{activeInfoItem.subtitle}</p>
+                </div>
+              </div>
+            </div>
+
+            <div className="home-info-sheet__body">
+              <p className="home-info-sheet__description">{activeInfoItem.description}</p>
+
+              <div className="home-info-sheet__meta">
+                <div className="home-info-sheet__meta-card">
+                  <span className="home-info-sheet__meta-label">Coleccion</span>
+                  <strong>{activeInfoItem.shelfLabel}</strong>
+                </div>
+                <div className="home-info-sheet__meta-card">
+                  <span className="home-info-sheet__meta-label">Entrada</span>
+                  <strong>{activeInfoItem.kind === 'external' ? 'Externa' : 'Interna'}</strong>
+                </div>
+              </div>
+
+              <div className="home-info-sheet__chips" aria-label="Etiquetas y metadata">
+                {infoDetailChips.map(chip => (
+                  <span key={chip} className="home-info-sheet__chip">{chip}</span>
+                ))}
+              </div>
+            </div>
+
+            <div className="home-info-sheet__actions">
+              {renderCatalogAction(activeInfoItem, 'cta home-cta home-info-sheet__cta', infoPrimaryActionLabel ?? 'Abrir', closeInfoModal)}
+              <button
+                type="button"
+                className="cta home-cta home-info-sheet__secondary"
+                onClick={closeInfoModal}
+              >
+                Cerrar
+              </button>
+            </div>
+          </section>
+        </div>
+      )}
     </main>
   )
 }
