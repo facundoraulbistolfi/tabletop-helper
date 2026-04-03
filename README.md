@@ -29,7 +29,7 @@ Arena de estrategias para Chinchón con bots, simulaciones y replay de manos. Pe
 Juego de memoria con sprites retro de Pac-Man, Space Invaders, Tetris y más. Modo multijugador para 2–3 personas, turnos automáticos y animaciones de volteo.
 
 ### Pac-Ludo
-Ludo temático de Pac-Man: movés fichas de fantasmas por el tablero, capturás rivales y buscás llegar al centro. Para 2–4 jugadores.
+Ludo temático de Pac-Man: elegís entre los cuatro fantasmas clásicos, Pac-Man o Ms. Pac-Man, movés sprites direccionales por el tablero, capturás rivales y buscás llegar al centro. Para 2–4 jugadores.
 
 ### Dosto
 Portal externo invitado dentro de la home. Abre [Dosto](https://facundoraulbistolfi.github.io/dosto/), una biblioteca personal interactiva sobre Dostoievski publicada aparte en GitHub Pages.
@@ -67,7 +67,7 @@ Portal externo invitado dentro de la home. Abre [Toca Toca](https://facundoraulb
 | Lenguaje | TypeScript (strict) |
 | Bundler | Vite 5 |
 | Routing | React Router 6 — HashRouter |
-| Estilos | CSS global + hoja dedicada para Home + CSS Modules por page |
+| Estilos | CSS global + hojas dedicadas cuando conviene + CSS Modules puntuales |
 | Testing | Vitest |
 | Deploy | GitHub Actions → GitHub Pages |
 

@@ -96,6 +96,8 @@ npm run test:watch
 ### Pac-Ludo
 - Ruta: `/#/tools/pacman-ludo`
 - Ludo temático de Pac-Man para 2–4 jugadores.
+- Setup por jugador con seis personajes disponibles: los cuatro fantasmas, Pac-Man y Ms. Pac-Man.
+- Sprites pixelados con orientación a 4 direcciones y ruleta rebalanceada.
 
 ### Contador de Puntos
 - Ruta: `/#/tools/point-counter`
@@ -183,6 +185,10 @@ Módulos clave actuales:
 - `chinchon-arena-sim.ts`
 - `chinchon-bot-presets.ts`
 - `chinchon-lab-worker-types.ts`
+- `pac-ludo/board.ts`
+- `pac-ludo/game.ts`
+- `pac-ludo/setup.ts`
+- `pac-ludo/characters.ts`
 
 ### Worker
 
@@ -220,6 +226,11 @@ ludario/
 │   │   └── HomeCornerButton.tsx
 │   ├── lib/
 │   │   ├── page-loaders.ts
+│   │   ├── pac-ludo/
+│   │   │   ├── board.ts
+│   │   │   ├── game.ts
+│   │   │   ├── setup.ts
+│   │   │   └── characters.ts
 │   │   ├── sudoku-killer.ts
 │   │   ├── chinchon-bot-game.ts
 │   │   ├── chinchon-sim-metrics.ts
@@ -234,6 +245,9 @@ ludario/
 │   │   ├── PointCounter.tsx
 │   │   ├── PacmanMemory.tsx
 │   │   ├── PacmanLudo.tsx
+│   │   ├── pacman-ludo/
+│   │   │   ├── BoardGrid.tsx
+│   │   │   └── PixelSprite.tsx
 │   │   └── chinchon-lab/
 │   │       └── Layout.tsx
 │   ├── styles/

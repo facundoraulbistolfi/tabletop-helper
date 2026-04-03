@@ -90,11 +90,7 @@ export default function Home() {
   const visibleFavoriteCount = getFavoriteCatalogItems(visibleItems, favorites).length
   const hasSearch = normalizedSearch.length > 0
   const totalExternalCount = CATALOG_ITEMS.filter(item => item.kind === 'external').length
-  const libraryEyebrow = activeFilter ? FILTER_META[activeFilter].eyebrow : 'Biblioteca viva'
   const libraryTitle = activeFilter ? FILTER_META[activeFilter].title : 'Un gran compendio'
-  const libraryDescription = activeFilter
-    ? FILTER_META[activeFilter].description
-    : 'Todo vive en la misma biblioteca: herramientas internas, portales curados y favoritos al frente.'
 
   function toggleFavorite(id: string) {
     setFavorites(prev => {
@@ -378,11 +374,7 @@ export default function Home() {
         aria-labelledby="catalog-title"
       >
         <div className="home-library__header">
-          <div>
-            <div className="home-kicker home-kicker--small">{libraryEyebrow}</div>
-            <h2 id="catalog-title">{libraryTitle}</h2>
-          </div>
-          <p>{libraryDescription}</p>
+          <h2 id="catalog-title">{libraryTitle}</h2>
         </div>
 
         <div className="home-search-panel">
