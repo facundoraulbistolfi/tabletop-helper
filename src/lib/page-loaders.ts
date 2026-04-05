@@ -11,6 +11,7 @@ export const pageLoaders = {
   chinchonLab: () => import('../pages/ChinchonArena'),
   truco: () => import('../pages/Truco'),
   pointCounter: () => import('../pages/PointCounter'),
+  evoLab: () => import('../pages/EvoLab'),
 } satisfies Record<string, PageLoader>
 
 const routePrefetchers: Record<string, PageLoader> = {
@@ -22,6 +23,7 @@ const routePrefetchers: Record<string, PageLoader> = {
   '/tools/chinchon-arena': pageLoaders.chinchonLab,
   '/tools/truco': pageLoaders.truco,
   '/tools/point-counter': pageLoaders.pointCounter,
+  '/tools/evo-lab': pageLoaders.evoLab,
 }
 
 const prefetchedRoutes = new Set<string>()

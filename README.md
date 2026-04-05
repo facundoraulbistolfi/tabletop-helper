@@ -25,6 +25,9 @@ Marcador de truco en palitos con soporte de buenas/malas, pensado para partidas 
 ### Chinchón Lab
 Arena de estrategias para Chinchón con bots, simulaciones y replay de manos. Permite comparar comportamientos entre bots, correr partidas espejo y jugar contra una IA en modo interactivo.
 
+### EvoLab
+Laboratorio interactivo de algoritmos genéticos. Configura población, selección (torneo/ruleta), cruce y mutación, y observá cómo una población evoluciona generación a generación para acercarse a un patrón objetivo. Incluye curvas de fitness, inspector de individuo y presets didácticos.
+
 ### Pac-Memory
 Juego de memoria con sprites retro de Pac-Man, Space Invaders, Tetris y más. Modo multijugador para 2–3 personas, turnos automáticos y animaciones de volteo.
 
@@ -56,6 +59,7 @@ Portal externo invitado dentro de la home. Abre [Toca Toca](https://facundoraulb
 - `/#/tools/pacman-memory` → Pac-Memory
 - `/#/tools/pacman-ludo` → Pac-Ludo
 - `/#/tools/point-counter` → Contador de Puntos
+- `/#/tools/evo-lab` → EvoLab
 
 ---
 

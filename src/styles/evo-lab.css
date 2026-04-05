@@ -1,0 +1,254 @@
+/* ── EvoLab — Global styles ── */
+
+.evo-lab-page {
+  --evo-bit-on: #7c4dff;
+  --evo-bit-off: #1a1a2e;
+  --evo-grid-border: #444;
+  max-width: 900px;
+  margin: 0 auto;
+  padding: 1rem;
+  padding-bottom: 5rem;
+}
+
+/* ── Config form ── */
+
+.evo-form-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+  gap: 0.75rem 1rem;
+}
+
+.evo-form-grid label {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  font-size: 0.85rem;
+  color: #ccc;
+}
+
+.evo-form-grid input,
+.evo-form-grid select {
+  padding: 0.4rem 0.5rem;
+  border: 1px solid #555;
+  border-radius: 4px;
+  background: #1a1a2e;
+  color: #eee;
+  font-size: 0.9rem;
+}
+
+.evo-form-grid input:disabled,
+.evo-form-grid select:disabled {
+  opacity: 0.5;
+}
+
+/* ── Controls ── */
+
+.evo-controls {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  flex-wrap: wrap;
+}
+
+.evo-controls__buttons {
+  display: flex;
+  gap: 0.5rem;
+}
+
+.evo-controls__info {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  flex-wrap: wrap;
+}
+
+.evo-controls__gen {
+  font-size: 0.85rem;
+  color: #aaa;
+  white-space: nowrap;
+}
+
+.evo-controls__speed {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-size: 0.8rem;
+  color: #888;
+}
+
+.evo-controls__speed input[type="range"] {
+  width: 80px;
+}
+
+/* ── Population grid ── */
+
+.evo-population {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.evo-population__target {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.25rem;
+}
+
+.evo-population__label {
+  font-size: 0.75rem;
+  color: #aaa;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.evo-population__grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.evo-population__cell {
+  background: none;
+  border: none;
+  padding: 1px;
+  cursor: pointer;
+  border-radius: 2px;
+  transition: transform 0.1s;
+}
+
+.evo-population__cell:hover {
+  transform: scale(1.15);
+}
+
+.evo-population__cell.is-selected {
+  outline: 2px solid #53f4ff;
+  outline-offset: 1px;
+}
+
+.evo-population__cell.is-best {
+  outline: 2px solid #4caf50;
+  outline-offset: 1px;
+}
+
+/* ── Inspector ── */
+
+.evo-inspector {
+  margin-top: 1rem;
+  padding: 0.75rem;
+  border: 1px solid #555;
+  border-radius: 6px;
+  background: #12122a;
+}
+
+.evo-inspector__header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 0.5rem;
+}
+
+.evo-inspector__header h3 {
+  margin: 0;
+  font-size: 1rem;
+  color: #eee;
+}
+
+.evo-inspector__stats,
+.evo-inspector__meta {
+  font-size: 0.85rem;
+  color: #ccc;
+  margin-bottom: 0.5rem;
+}
+
+.evo-inspector__stats div,
+.evo-inspector__meta div {
+  margin-bottom: 0.2rem;
+}
+
+.evo-inspector__diff {
+  font-size: 0.8rem;
+  color: #aaa;
+}
+
+.evo-inspector__genome {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1px;
+  margin-top: 0.25rem;
+  font-family: monospace;
+  font-size: 0.7rem;
+}
+
+.evo-inspector__gene {
+  width: 1.2em;
+  height: 1.2em;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 2px;
+}
+
+.evo-inspector__gene.is-match {
+  background: #2e7d3280;
+  color: #81c784;
+}
+
+.evo-inspector__gene.is-miss {
+  background: #c6282850;
+  color: #ef9a9a;
+}
+
+/* ── Chart ── */
+
+.evo-chart {
+  width: 100%;
+}
+
+.evo-chart--empty {
+  color: #888;
+  text-align: center;
+  padding: 2rem 0;
+}
+
+.evo-chart__svg {
+  width: 100%;
+  height: auto;
+  max-height: 300px;
+}
+
+.evo-chart__legend {
+  display: flex;
+  gap: 1rem;
+  justify-content: center;
+  font-size: 0.8rem;
+  margin-top: 0.5rem;
+}
+
+/* ── Metrics summary ── */
+
+.evo-metrics-summary {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+  gap: 0.5rem;
+  margin-top: 1rem;
+  font-size: 0.85rem;
+  color: #ccc;
+}
+
+/* ── Mobile tweaks ── */
+
+@media (max-width: 600px) {
+  .evo-lab-page {
+    padding: 0.5rem;
+    padding-bottom: 5rem;
+  }
+
+  .evo-form-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .evo-population__grid {
+    gap: 2px;
+  }
+}

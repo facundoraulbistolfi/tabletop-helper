@@ -11,6 +11,7 @@ const PacmanLudo = lazyPage(pageLoaders.pacmanLudo)
 const ChinchonArena = lazyPage(pageLoaders.chinchonLab)
 const Truco = lazyPage(pageLoaders.truco)
 const PointCounter = lazyPage(pageLoaders.pointCounter)
+const EvoLab = lazyPage(pageLoaders.evoLab)
 
 function RouteFallback() {
   const { pathname } = useLocation()
@@ -53,6 +54,7 @@ export default function App() {
         <Route path="/tools/chinchon-arena" element={<ToolRoute><ChinchonArena /></ToolRoute>} />
         <Route path="/tools/truco" element={<ToolRoute><Truco /></ToolRoute>} />
         <Route path="/tools/point-counter" element={<ToolRoute><PointCounter /></ToolRoute>} />
+        <Route path="/tools/evo-lab" element={<ToolRoute><EvoLab /></ToolRoute>} />
       </Routes>
     </Suspense>
   )

@@ -33,6 +33,7 @@ Notas importantes:
 - La home usa **lazy loading** para todas las tools no-home.
 - Hay **prefetch suave** de rutas desde `Home` y el botón flotante `📚`.
 - `Chinchón Lab` usa **Web Worker** para simulación, torneo y benchmark, evitando bloquear el main thread.
+- `EvoLab` usa **Web Worker** para simulación de algoritmos genéticos, con el mismo patrón de jobId/cancel/yield.
 
 ---
 
@@ -99,6 +100,14 @@ npm run test:watch
 - Setup por jugador con seis personajes disponibles: los cuatro fantasmas, Pac-Man y Ms. Pac-Man.
 - Sprites pixelados con orientación a 4 direcciones y ruleta rebalanceada.
 
+### EvoLab
+- Ruta: `/#/tools/evo-lab`
+- Laboratorio interactivo de algoritmos genéticos / evolutivos.
+- Configura población, selección (torneo/ruleta), cruce (1-punto/2-puntos/uniforme) y mutación (bit-flip).
+- Visualiza la evolución de una población en tiempo real contra un patrón objetivo (Target BitGrid).
+- Curvas de fitness (best/avg/worst), inspector de individuo y métricas de diversidad.
+- Usa lógica pura en `src/lib/genetic-lab/` y worker en `src/workers/genetic-lab.worker.ts`.
+
 ### Contador de Puntos
 - Ruta: `/#/tools/point-counter`
 - Marcador genérico por jugador con suma rápida, toolbox por long press y persistencia local.
@@ -140,6 +149,7 @@ La app usa **HashRouter**, por lo que todas las URLs públicas cuelgan de `/#/`.
 | `/#/tools/pacman-memory` | Pac-Memory |
 | `/#/tools/pacman-ludo` | Pac-Ludo |
 | `/#/tools/point-counter` | Contador de Puntos |
+| `/#/tools/evo-lab` | EvoLab |
 
 HashRouter evita configuración extra de servidor y funciona bien en GitHub Pages.
 
@@ -185,6 +195,14 @@ Módulos clave actuales:
 - `chinchon-arena-sim.ts`
 - `chinchon-bot-presets.ts`
 - `chinchon-lab-worker-types.ts`
+- `genetic-lab-worker-types.ts`
+- `genetic-lab/types.ts`
+- `genetic-lab/rng.ts`
+- `genetic-lab/operators.ts`
+- `genetic-lab/engine.ts`
+- `genetic-lab/problems.ts`
+- `genetic-lab/metrics.ts`
+- `genetic-lab/presets.ts`
 - `pac-ludo/board.ts`
 - `pac-ludo/game.ts`
 - `pac-ludo/setup.ts`
@@ -195,6 +213,10 @@ Módulos clave actuales:
 - `src/workers/chinchon-lab.worker.ts`
   - corre simulación, torneo y benchmark de bots;
   - envía snapshots al main thread;
+  - permite cancelación de jobs en progreso.
+- `src/workers/genetic-lab.worker.ts`
+  - corre generaciones del algoritmo genético para EvoLab;
+  - envía snapshots de población y métricas al main thread;
   - permite cancelación de jobs en progreso.
 
 ### Estilos
@@ -243,8 +265,15 @@ ludario/
 │   │   ├── Truco.tsx
 │   │   ├── ChinchonArena.tsx
 │   │   ├── PointCounter.tsx
+│   │   ├── EvoLab.tsx
 │   │   ├── PacmanMemory.tsx
 │   │   ├── PacmanLudo.tsx
+│   │   ├── evo-lab/
+│   │   │   ├── ConfigForm.tsx
+│   │   │   ├── Controls.tsx
+│   │   │   ├── PopulationGrid.tsx
+│   │   │   ├── Inspector.tsx
+│   │   │   └── FitnessChart.tsx
 │   │   ├── pacman-ludo/
 │   │   │   ├── BoardGrid.tsx
 │   │   │   └── PixelSprite.tsx
@@ -306,6 +335,9 @@ Vitest corre sobre lógica pura del repo.
 
 Suites actuales importantes:
 
+- `src/lib/genetic-lab/rng.test.ts`
+- `src/lib/genetic-lab/operators.test.ts`
+- `src/lib/genetic-lab/engine.test.ts`
 - `src/lib/sudoku-killer.test.ts`
 - `src/lib/chinchon-bot-game.test.ts`
 - `src/lib/chinchon-sim-metrics.test.ts`
