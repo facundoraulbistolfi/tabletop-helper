@@ -1,5 +1,20 @@
-import { useState, useCallback } from 'react'
+import { useState, useCallback, useEffect } from 'react'
 import type { MazePreset, MazeCell, MazeGrid } from '../../lib/genetic-lab/maze-runner-types'
+
+const LS_KEY = 'evo-lab-saved-mazes'
+
+type SavedMaze = { name: string; maze: MazePreset }
+
+function loadSavedMazes(): SavedMaze[] {
+  try {
+    const raw = localStorage.getItem(LS_KEY)
+    return raw ? JSON.parse(raw) : []
+  } catch { return [] }
+}
+
+function persistMazes(mazes: SavedMaze[]) {
+  localStorage.setItem(LS_KEY, JSON.stringify(mazes))
+}
 
 type Props = {
   maze: MazePreset
@@ -69,6 +84,28 @@ function resizeGrid(
 export default function MazeEditor({ maze, onChange, disabled }: Props) {
   const [tool, setTool] = useState<Tool>('wall')
   const [painting, setPainting] = useState(false)
+  const [savedMazes, setSavedMazes] = useState<SavedMaze[]>([])
+  const [saveName, setSaveName] = useState('')
+
+  useEffect(() => { setSavedMazes(loadSavedMazes()) }, [])
+
+  const handleSave = useCallback(() => {
+    const name = saveName.trim() || `Maze ${savedMazes.length + 1}`
+    const updated = [...savedMazes.filter(m => m.name !== name), { name, maze: { ...maze, id: 'custom', name: 'Custom' } }]
+    persistMazes(updated)
+    setSavedMazes(updated)
+    setSaveName('')
+  }, [maze, saveName, savedMazes])
+
+  const handleLoadSaved = useCallback((saved: SavedMaze) => {
+    onChange(saved.maze)
+  }, [onChange])
+
+  const handleDeleteSaved = useCallback((name: string) => {
+    const updated = savedMazes.filter(m => m.name !== name)
+    persistMazes(updated)
+    setSavedMazes(updated)
+  }, [savedMazes])
 
   const handleCellInteraction = useCallback((r: number, c: number) => {
     if (disabled) return
@@ -144,20 +181,20 @@ export default function MazeEditor({ maze, onChange, disabled }: Props) {
     <div className="evo-maze-editor">
       <div className="evo-maze-editor__size">
         <label>
-          Ancho
+          Ancho: {maze.width}
           <input
-            type="number" min={4} max={20}
+            type="range" min={4} max={20}
             value={maze.width}
-            onChange={e => handleResize(parseInt(e.target.value) || maze.width, maze.height)}
+            onChange={e => handleResize(parseInt(e.target.value), maze.height)}
             disabled={disabled}
           />
         </label>
         <label>
-          Alto
+          Alto: {maze.height}
           <input
-            type="number" min={4} max={20}
+            type="range" min={4} max={20}
             value={maze.height}
-            onChange={e => handleResize(maze.width, parseInt(e.target.value) || maze.height)}
+            onChange={e => handleResize(maze.width, parseInt(e.target.value))}
             disabled={disabled}
           />
         </label>
@@ -219,6 +256,49 @@ export default function MazeEditor({ maze, onChange, disabled }: Props) {
       <p className="evo-maze-editor__hint">
         Click o arrastr&aacute; para pintar. Los bordes siempre son pared.
       </p>
+
+      <div className="evo-maze-editor__storage">
+        <div className="evo-maze-editor__save-row">
+          <input
+            type="text"
+            placeholder="Nombre del mapa..."
+            value={saveName}
+            onChange={e => setSaveName(e.target.value)}
+            disabled={disabled}
+            className="evo-maze-editor__save-input"
+          />
+          <button type="button" className="lab-tab" onClick={handleSave} disabled={disabled} title="Guardar mapa actual">
+            Guardar
+          </button>
+        </div>
+        {savedMazes.length > 0 && (
+          <div className="evo-maze-editor__saved-list">
+            <span className="evo-maze-editor__saved-label">Guardados:</span>
+            {savedMazes.map(s => (
+              <span key={s.name} className="evo-maze-editor__saved-item">
+                <button
+                  type="button"
+                  className="lab-tab"
+                  onClick={() => handleLoadSaved(s)}
+                  disabled={disabled}
+                  title={`Cargar "${s.name}" (${s.maze.width}×${s.maze.height})`}
+                >
+                  {s.name}
+                </button>
+                <button
+                  type="button"
+                  className="evo-maze-editor__delete-btn"
+                  onClick={() => handleDeleteSaved(s.name)}
+                  disabled={disabled}
+                  title={`Borrar "${s.name}"`}
+                >
+                  &times;
+                </button>
+              </span>
+            ))}
+          </div>
+        )}
+      </div>
     </div>
   )
 }
