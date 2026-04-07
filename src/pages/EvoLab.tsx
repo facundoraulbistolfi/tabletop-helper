@@ -5,10 +5,14 @@ import Controls from './evo-lab/Controls'
 import PopulationGrid from './evo-lab/PopulationGrid'
 import Inspector from './evo-lab/Inspector'
 import FitnessChart from './evo-lab/FitnessChart'
+import MazePopulationView from './evo-lab/MazePopulationView'
+import MazeInspectorDetails from './evo-lab/MazeInspectorDetails'
 import { PRESETS } from '../lib/genetic-lab/presets'
 import { computeMetrics } from '../lib/genetic-lab/metrics'
+import { computeMazePopulationStats } from '../lib/genetic-lab/maze-runner'
 import type { ExperimentConfig, PopulationSnapshot, MetricsTick, Genome } from '../lib/genetic-lab/types'
 import type { GeneticLabWorkerRequest, GeneticLabWorkerMessage } from '../lib/genetic-lab-worker-types'
+import type { MazePreset } from '../lib/genetic-lab/maze-runner-types'
 
 const TABS = [
   { value: 'experiment', label: 'Experimento', shortLabel: 'Config' },
@@ -25,10 +29,13 @@ export default function EvoLab() {
   const [selectedId, setSelectedId] = useState<number | null>(null)
   const [tickMs, setTickMs] = useState(80)
   const [target, setTarget] = useState<Genome | null>(null)
+  const [mazeCtx, setMazeCtx] = useState<MazePreset | null>(null)
 
   const workerRef = useRef<Worker | null>(null)
   const jobIdRef = useRef(0)
   const runTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  const isMaze = config.problemId === 'maze-runner'
 
   useEffect(() => {
     const worker = new Worker(
@@ -75,13 +82,14 @@ export default function EvoLab() {
     setSelectedId(null)
     setRunning(false)
 
-    // Compute target for display by using the same seed logic as the worker
+    // Build context locally for UI display
     import('../lib/genetic-lab/rng').then(({ createRng }) => {
       import('../lib/genetic-lab/problems').then(({ getProblem }) => {
         const problem = getProblem(config.problemId)
         if (problem) {
           const ctx = problem.buildContext(config, createRng(config.seed))
           setTarget(ctx.target ?? null)
+          setMazeCtx(ctx.maze ?? null)
         }
       })
     })
@@ -123,6 +131,7 @@ export default function EvoLab() {
     setMetricsHistory([])
     setSelectedId(null)
     setTarget(null)
+    setMazeCtx(null)
     setTab('experiment')
   }, [handlePause])
 
@@ -136,6 +145,18 @@ export default function EvoLab() {
     ? computeMetrics(snapshot)
     : null
   const displayHistory = initialMetrics ? [initialMetrics] : metricsHistory
+
+  // Max fitness for chart scaling
+  const maxFitness = isMaze ? 1000 : config.genomeLength
+
+  // Maze-specific population stats (computed on UI side)
+  const mazeStats = (isMaze && snapshot && mazeCtx)
+    ? computeMazePopulationStats(snapshot.individuals.map(i => i.genome), mazeCtx)
+    : null
+
+  const maxSteps = isMaze
+    ? (config.problemParams?.maxSteps as number) ?? config.genomeLength / 2
+    : 0
 
   return (
     <main className="page evo-lab-page">
@@ -152,21 +173,40 @@ export default function EvoLab() {
       {tab === 'evolution' && (
         <>
           {snapshot ? (
-            <>
-              <PopulationGrid
-                individuals={snapshot.individuals}
-                target={target ?? undefined}
-                bestId={bestId}
-                selectedId={selectedId}
-                onSelect={setSelectedId}
-                genomeLength={config.genomeLength}
-              />
-              <Inspector
-                individual={selectedIndividual}
-                target={target ?? undefined}
-                onClose={() => setSelectedId(null)}
-              />
-            </>
+            isMaze && mazeCtx ? (
+              <>
+                <MazePopulationView
+                  individuals={snapshot.individuals}
+                  maze={mazeCtx}
+                  generation={snapshot.generation}
+                  bestId={bestId}
+                  selectedId={selectedId}
+                  onSelect={setSelectedId}
+                />
+                <MazeInspectorDetails
+                  individual={selectedIndividual}
+                  maze={mazeCtx}
+                  maxSteps={maxSteps}
+                  onClose={() => setSelectedId(null)}
+                />
+              </>
+            ) : (
+              <>
+                <PopulationGrid
+                  individuals={snapshot.individuals}
+                  target={target ?? undefined}
+                  bestId={bestId}
+                  selectedId={selectedId}
+                  onSelect={setSelectedId}
+                  genomeLength={config.genomeLength}
+                />
+                <Inspector
+                  individual={selectedIndividual}
+                  target={target ?? undefined}
+                  onClose={() => setSelectedId(null)}
+                />
+              </>
+            )
           ) : (
             <LabPanel title="Evolución" subtitle="Inicializa un experimento desde la tab Experimento o presiona Inicializar abajo.">
               <p style={{ color: '#888', fontSize: '0.9rem' }}>Usa el botón Inicializar en la barra inferior.</p>
@@ -179,7 +219,7 @@ export default function EvoLab() {
         <LabPanel title="Métricas de fitness" subtitle="Curvas best / promedio / peor por generación.">
           <FitnessChart
             history={displayHistory}
-            maxFitness={config.genomeLength}
+            maxFitness={maxFitness}
           />
           {metricsHistory.length > 0 && (
             <div className="evo-metrics-summary">
@@ -189,6 +229,12 @@ export default function EvoLab() {
               <div><strong>Peor:</strong> {metricsHistory[metricsHistory.length - 1].worst}</div>
               {metricsHistory[metricsHistory.length - 1].diversity !== undefined && (
                 <div><strong>Diversidad:</strong> {metricsHistory[metricsHistory.length - 1].diversity!.toFixed(3)}</div>
+              )}
+              {mazeStats && (
+                <>
+                  <div><strong>Llegan a la meta:</strong> {mazeStats.reachedPct.toFixed(1)}%</div>
+                  <div><strong>Dist. promedio:</strong> {mazeStats.avgDistance.toFixed(1)}</div>
+                </>
               )}
             </div>
           )}

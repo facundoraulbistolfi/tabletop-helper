@@ -1,6 +1,7 @@
 import { LabPanel, LabAccordionSection } from '../chinchon-lab/Layout'
 import { PRESETS } from '../../lib/genetic-lab/presets'
 import { PROBLEMS } from '../../lib/genetic-lab/problems'
+import { MAZE_PRESETS } from '../../lib/genetic-lab/maze-runner-maps'
 import type { ExperimentConfig } from '../../lib/genetic-lab/types'
 
 type Props = {
@@ -14,6 +15,9 @@ function clamp(value: number, min: number, max: number): number {
 }
 
 export default function ConfigForm({ config, onChange, disabled }: Props) {
+  const isMaze = config.problemId === 'maze-runner'
+  const maxSteps = isMaze ? ((config.problemParams?.maxSteps as number) ?? 25) : 0
+
   function set<K extends keyof ExperimentConfig>(key: K, value: ExperimentConfig[K]) {
     onChange({ ...config, [key]: value })
   }
@@ -34,6 +38,44 @@ export default function ConfigForm({ config, onChange, disabled }: Props) {
     }
   }
 
+  function handleProblemChange(problemId: string) {
+    if (problemId === 'maze-runner') {
+      // Switch to maze defaults
+      const defaultMaxSteps = 25
+      onChange({
+        ...config,
+        problemId,
+        genomeLength: defaultMaxSteps * 2,
+        problemParams: { mazePresetId: 'easy-corridor', maxSteps: defaultMaxSteps },
+      })
+    } else {
+      // Switch back to non-maze defaults
+      const problem = PROBLEMS.find(p => p.id === problemId)
+      onChange({
+        ...config,
+        problemId,
+        genomeLength: problem?.defaultGenomeLength ?? 64,
+        problemParams: undefined,
+      })
+    }
+  }
+
+  function handleMazePresetChange(mazePresetId: string) {
+    onChange({
+      ...config,
+      problemParams: { ...config.problemParams, mazePresetId },
+    })
+  }
+
+  function handleMaxStepsChange(newMaxSteps: number) {
+    const clamped = clamp(newMaxSteps, 5, 200)
+    onChange({
+      ...config,
+      genomeLength: clamped * 2,
+      problemParams: { ...config.problemParams, maxSteps: clamped },
+    })
+  }
+
   return (
     <div>
       <LabPanel title="Presets" subtitle="Carga una configuración predefinida con un click.">
@@ -51,6 +93,18 @@ export default function ConfigForm({ config, onChange, disabled }: Props) {
             </button>
           ))}
         </div>
+        {/* Show description of loaded preset if it matches one */}
+        {PRESETS.some(p =>
+          p.config.problemId === config.problemId &&
+          p.config.seed === config.seed
+        ) && (
+          <p style={{ color: '#aaa', fontSize: '0.8rem', marginTop: '0.5rem' }}>
+            {PRESETS.find(p =>
+              p.config.problemId === config.problemId &&
+              p.config.seed === config.seed
+            )?.description}
+          </p>
+        )}
       </LabPanel>
 
       <LabAccordionSection title="Problema" defaultOpen>
@@ -58,7 +112,7 @@ export default function ConfigForm({ config, onChange, disabled }: Props) {
           Problema
           <select
             value={config.problemId}
-            onChange={e => set('problemId', e.target.value)}
+            onChange={e => handleProblemChange(e.target.value)}
             disabled={disabled}
           >
             {PROBLEMS.map(p => (
@@ -66,6 +120,44 @@ export default function ConfigForm({ config, onChange, disabled }: Props) {
             ))}
           </select>
         </label>
+
+        {isMaze && (
+          <div className="evo-form-grid" style={{ marginTop: '0.75rem' }}>
+            <label>
+              Laberinto
+              <select
+                value={(config.problemParams?.mazePresetId as string) ?? 'easy-corridor'}
+                onChange={e => handleMazePresetChange(e.target.value)}
+                disabled={disabled}
+              >
+                {MAZE_PRESETS.map(m => (
+                  <option key={m.id} value={m.id}>{m.name} ({m.width}&times;{m.height})</option>
+                ))}
+              </select>
+            </label>
+            <label>
+              Pasos m&aacute;x.
+              <input
+                type="number"
+                min={5}
+                max={200}
+                value={maxSteps}
+                onChange={e => handleMaxStepsChange(parseInt(e.target.value) || 25)}
+                disabled={disabled}
+              />
+            </label>
+            <label>
+              Largo del genoma
+              <input
+                type="number"
+                value={config.genomeLength}
+                disabled
+                title="Se calcula autom&aacute;ticamente: pasos &times; 2"
+              />
+              <span style={{ fontSize: '0.75rem', color: '#888' }}>= pasos &times; 2 (autom&aacute;tico)</span>
+            </label>
+          </div>
+        )}
       </LabAccordionSection>
 
       <LabAccordionSection title="Población y genoma" defaultOpen>
@@ -86,7 +178,7 @@ export default function ConfigForm({ config, onChange, disabled }: Props) {
                 onClick={() => set('seed', Math.floor(Math.random() * 2147483647))}
                 title="Seed aleatorio"
               >
-                🎲
+                &#x1F3B2;
               </button>
             </div>
           </label>
@@ -101,17 +193,19 @@ export default function ConfigForm({ config, onChange, disabled }: Props) {
               disabled={disabled}
             />
           </label>
-          <label>
-            Largo del genoma
-            <input
-              type="number"
-              min={4}
-              max={256}
-              value={config.genomeLength}
-              onChange={e => set('genomeLength', clamp(parseInt(e.target.value) || 64, 4, 256))}
-              disabled={disabled}
-            />
-          </label>
+          {!isMaze && (
+            <label>
+              Largo del genoma
+              <input
+                type="number"
+                min={4}
+                max={256}
+                value={config.genomeLength}
+                onChange={e => set('genomeLength', clamp(parseInt(e.target.value) || 64, 4, 256))}
+                disabled={disabled}
+              />
+            </label>
+          )}
           <label>
             Elitismo
             <input
@@ -124,7 +218,7 @@ export default function ConfigForm({ config, onChange, disabled }: Props) {
             />
           </label>
           <label>
-            Generaciones máx.
+            Generaciones m&aacute;x.
             <input
               type="number"
               min={10}
@@ -140,7 +234,7 @@ export default function ConfigForm({ config, onChange, disabled }: Props) {
       <LabAccordionSection title="Selección">
         <div className="evo-form-grid">
           <label>
-            Método
+            M&eacute;todo
             <select
               value={config.selection.method}
               onChange={e => setSelection(e.target.value as 'tournament' | 'roulette')}
@@ -152,7 +246,7 @@ export default function ConfigForm({ config, onChange, disabled }: Props) {
           </label>
           {config.selection.method === 'tournament' && (
             <label>
-              k (tamaño torneo)
+              k (tama&ntilde;o torneo)
               <input
                 type="number"
                 min={2}
@@ -169,7 +263,7 @@ export default function ConfigForm({ config, onChange, disabled }: Props) {
       <LabAccordionSection title="Cruce">
         <div className="evo-form-grid">
           <label>
-            Método
+            M&eacute;todo
             <select
               value={config.crossover.method}
               onChange={e => setCrossover(e.target.value as 'onePoint' | 'twoPoint' | 'uniform', config.crossover.rate)}

@@ -25,6 +25,8 @@ export type MetricsTick = {
   avg: number
   worst: number
   diversity?: number
+  /** Problem-specific extra metrics (e.g. reachedPct, avgDistance for maze-runner) */
+  extra?: Record<string, number>
 }
 
 export type SelectionMethod =
@@ -49,4 +51,6 @@ export type ExperimentConfig = {
   crossover: CrossoverMethod
   mutation: MutationMethod
   maxGenerations: number
+  /** Problem-specific parameters (e.g. mazePresetId, maxSteps for maze-runner) */
+  problemParams?: Record<string, unknown>
 }

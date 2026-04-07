@@ -236,6 +236,171 @@
   color: #ccc;
 }
 
+/* ── Maze Replay ── */
+
+.evo-maze-replay {
+  width: 100%;
+  height: auto;
+  max-height: 350px;
+  display: block;
+  background: #111;
+  border-radius: 4px;
+}
+
+.evo-maze-replay--mini {
+  max-height: none;
+  width: 100%;
+}
+
+/* ── Maze Population View ── */
+
+.evo-maze-population {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.evo-maze-population__header {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem 1.5rem;
+  font-size: 0.85rem;
+  color: #ccc;
+  padding: 0.5rem 0;
+  border-bottom: 1px solid #333;
+}
+
+.evo-maze-population__main {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.evo-maze-population__main-label {
+  font-size: 0.85rem;
+  color: #aaa;
+}
+
+.evo-maze-population__main .evo-maze-replay {
+  max-width: 480px;
+}
+
+.evo-maze-population__grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(80px, 1fr));
+  gap: 6px;
+}
+
+/* ── Maze Mini Card ── */
+
+.evo-maze-card {
+  background: #1a1a2e;
+  border: 1px solid #444;
+  border-radius: 4px;
+  padding: 3px;
+  cursor: pointer;
+  transition: transform 0.1s, border-color 0.15s;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.evo-maze-card:hover {
+  transform: scale(1.05);
+  border-color: #666;
+}
+
+.evo-maze-card.is-selected {
+  border-color: #53f4ff;
+  box-shadow: 0 0 4px #53f4ff40;
+}
+
+.evo-maze-card.is-best {
+  border-color: #4caf50;
+}
+
+.evo-maze-card.is-reached {
+  border-left: 3px solid #4caf50;
+}
+
+.evo-maze-card__info {
+  display: flex;
+  justify-content: space-between;
+  font-size: 0.65rem;
+  color: #aaa;
+  padding: 0 2px;
+}
+
+.evo-maze-card__fitness {
+  font-weight: 600;
+}
+
+.evo-maze-card__status.is-ok {
+  color: #4caf50;
+  font-weight: 700;
+}
+
+.evo-maze-card__status.is-miss {
+  color: #ef5350;
+}
+
+/* ── Maze Inspector ── */
+
+.evo-maze-inspector__replay {
+  max-width: 360px;
+  margin-bottom: 0.75rem;
+}
+
+.evo-maze-inspector__desc {
+  font-size: 0.85rem;
+  color: #b0b0d0;
+  font-style: italic;
+  margin: 0.5rem 0;
+}
+
+.evo-maze-inspector__moves {
+  font-size: 0.8rem;
+  color: #aaa;
+  margin-top: 0.5rem;
+}
+
+.evo-maze-inspector__arrows {
+  font-family: monospace;
+  font-size: 0.85rem;
+  letter-spacing: 0.1em;
+  margin-top: 0.25rem;
+  word-break: break-all;
+  line-height: 1.4;
+  color: #ccc;
+}
+
+/* ── Maze Didactic Panel ── */
+
+.evo-maze-didactic {
+  background: #12122a;
+  border: 1px solid #333;
+  border-radius: 6px;
+  padding: 0.5rem 0.75rem;
+  font-size: 0.82rem;
+  color: #aaa;
+}
+
+.evo-maze-didactic summary {
+  cursor: pointer;
+  color: #ccc;
+  font-weight: 600;
+  font-size: 0.85rem;
+}
+
+.evo-maze-didactic ul {
+  margin: 0.4rem 0 0;
+  padding-left: 1.2rem;
+}
+
+.evo-maze-didactic li {
+  margin-bottom: 0.2rem;
+}
+
 /* ── Mobile tweaks ── */
 
 @media (max-width: 600px) {
@@ -250,5 +415,18 @@
 
   .evo-population__grid {
     gap: 2px;
+  }
+
+  .evo-maze-population__grid {
+    grid-template-columns: repeat(auto-fill, minmax(65px, 1fr));
+    gap: 4px;
+  }
+
+  .evo-maze-population__main .evo-maze-replay {
+    max-width: 100%;
+  }
+
+  .evo-maze-inspector__replay {
+    max-width: 100%;
   }
 }
