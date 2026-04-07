@@ -16,7 +16,29 @@ const GOAL_COLOR = '#ffd34c'
 const DOT_REACHED = '#4caf50'
 const DOT_NORMAL = '#7c4dff'
 const DOT_BEST = '#53f4ff'
-const TRAIL_COLOR = '#7c4dff'
+
+/** Interpolate between cold (blue) and hot (red) via a thermometer scale */
+function heatColor(t: number): string {
+  // t: 0 (cold/no visits) → 1 (hot/many visits)
+  // blue → cyan → green → yellow → orange → red
+  const clamped = Math.max(0, Math.min(1, t))
+  const stops: [number, number, number][] = [
+    [30, 60, 180],   // dark blue
+    [0, 180, 220],   // cyan
+    [0, 200, 80],    // green
+    [255, 220, 0],   // yellow
+    [255, 140, 0],   // orange
+    [255, 40, 20],   // red
+  ]
+  const idx = clamped * (stops.length - 1)
+  const lo = Math.floor(idx)
+  const hi = Math.min(lo + 1, stops.length - 1)
+  const frac = idx - lo
+  const r = Math.round(stops[lo][0] + (stops[hi][0] - stops[lo][0]) * frac)
+  const g = Math.round(stops[lo][1] + (stops[hi][1] - stops[lo][1]) * frac)
+  const b = Math.round(stops[lo][2] + (stops[hi][2] - stops[lo][2]) * frac)
+  return `rgb(${r},${g},${b})`
+}
 
 export default function MazeAnimationView({ individuals, maze, generation }: Props) {
   const [step, setStep] = useState(0)
@@ -36,6 +58,23 @@ export default function MazeAnimationView({ individuals, maze, generation }: Pro
   const maxSteps = useMemo(() => {
     return Math.max(1, ...sims.map(s => s.result.path.length))
   }, [sims])
+
+  // Compute heatmap: how many times each cell is visited across ALL individuals up to current step
+  const { heatmap, maxHeat } = useMemo(() => {
+    const counts: number[][] = Array.from({ length: maze.height }, () =>
+      new Array(maze.width).fill(0)
+    )
+    for (const sim of sims) {
+      const pathEnd = Math.min(step + 1, sim.result.path.length)
+      for (let s = 0; s < pathEnd; s++) {
+        const [r, c] = sim.result.path[s]
+        counts[r][c]++
+      }
+    }
+    let mx = 0
+    for (const row of counts) for (const v of row) if (v > mx) mx = v
+    return { heatmap: counts, maxHeat: mx }
+  }, [sims, step, maze.height, maze.width])
 
   // Reset step when generation changes
   useEffect(() => {
@@ -74,7 +113,6 @@ export default function MazeAnimationView({ individuals, maze, generation }: Pro
   const w = maze.width * cellSize
   const h = maze.height * cellSize
   const dotR = 0.22
-  const trailWidth = 0.08
 
   // Count how many reached the goal at current step
   const reachedCount = sims.filter(s => {
@@ -85,9 +123,9 @@ export default function MazeAnimationView({ individuals, maze, generation }: Pro
   return (
     <div className="evo-maze-animation">
       <div className="evo-maze-animation__header">
-        <span title="N&uacute;mero de generaci&oacute;n que se est&aacute; animando"><strong>Gen:</strong> {generation}</span>
-        <span title="Paso actual de la animaci&oacute;n. Cada paso es un movimiento (arriba/derecha/abajo/izquierda) de todos los individuos."><strong>Paso:</strong> {step + 1} / {maxSteps}</span>
-        <span title="Cu&aacute;ntos individuos ya alcanzaron la meta hasta este paso"><strong>Llegaron:</strong> {reachedCount} / {individuals.length}</span>
+        <span title="Número de generación que se está animando"><strong>Gen:</strong> {generation}</span>
+        <span title="Paso actual de la animación. Cada paso es un movimiento de todos los individuos."><strong>Paso:</strong> {step + 1} / {maxSteps}</span>
+        <span title="Cuántos individuos ya alcanzaron la meta hasta este paso"><strong>Llegaron:</strong> {reachedCount} / {individuals.length}</span>
       </div>
 
       <svg
@@ -95,20 +133,33 @@ export default function MazeAnimationView({ individuals, maze, generation }: Pro
         className="evo-maze-replay"
         style={{ maxHeight: 400 }}
       >
-        {/* Grid cells */}
+        {/* Grid cells with heatmap overlay */}
         {maze.grid.map((row, r) =>
-          row.map((cell, c) => (
-            <rect
-              key={`${r}-${c}`}
-              x={c * cellSize}
-              y={r * cellSize}
-              width={cellSize}
-              height={cellSize}
-              fill={cell === 1 ? WALL_COLOR : FREE_COLOR}
-              stroke="#333"
-              strokeWidth={0.02}
-            />
-          ))
+          row.map((cell, c) => {
+            const isWall = cell === 1
+            const heat = heatmap[r][c]
+            let fill: string
+            if (isWall) {
+              fill = WALL_COLOR
+            } else if (heat > 0 && maxHeat > 0) {
+              fill = heatColor(heat / maxHeat)
+            } else {
+              fill = FREE_COLOR
+            }
+            return (
+              <rect
+                key={`${r}-${c}`}
+                x={c * cellSize}
+                y={r * cellSize}
+                width={cellSize}
+                height={cellSize}
+                fill={fill}
+                stroke="#333"
+                strokeWidth={0.02}
+                opacity={isWall ? 1 : (heat > 0 ? 0.7 + 0.3 * (heat / (maxHeat || 1)) : 1)}
+              />
+            )
+          })
         )}
 
         {/* Start marker */}
@@ -117,7 +168,7 @@ export default function MazeAnimationView({ individuals, maze, generation }: Pro
           cy={maze.start[0] * cellSize + cellSize / 2}
           r={0.25}
           fill={START_COLOR}
-          opacity={0.6}
+          opacity={0.8}
         />
 
         {/* Goal marker */}
@@ -126,21 +177,15 @@ export default function MazeAnimationView({ individuals, maze, generation }: Pro
           cy={maze.goal[0] * cellSize + cellSize / 2}
           r={0.25}
           fill={GOAL_COLOR}
-          opacity={0.6}
+          opacity={0.8}
         />
 
-        {/* Trails + dots for each individual */}
+        {/* Dots for each individual at current position */}
         {sims.map((sim, i) => {
           const path = sim.result.path
           const currentStep = Math.min(step, path.length - 1)
           const isBest = sim.fitness === bestFitness
           const hasReached = sim.result.reached && sim.result.reachedAtStep != null && sim.result.reachedAtStep < step
-
-          // Trail: draw path up to current step
-          const trailPoints = path
-            .slice(0, currentStep + 1)
-            .map(([r, c]) => `${c * cellSize + cellSize / 2},${r * cellSize + cellSize / 2}`)
-            .join(' ')
 
           const pos = path[currentStep]
           const cx = pos[1] * cellSize + cellSize / 2
@@ -149,29 +194,41 @@ export default function MazeAnimationView({ individuals, maze, generation }: Pro
           const color = hasReached ? DOT_REACHED : isBest ? DOT_BEST : DOT_NORMAL
 
           return (
-            <g key={i} opacity={hasReached ? 0.5 : 0.85}>
-              {trailPoints && (
-                <polyline
-                  points={trailPoints}
-                  fill="none"
-                  stroke={TRAIL_COLOR}
-                  strokeWidth={trailWidth}
-                  strokeLinecap="round"
-                  opacity={0.25}
-                />
-              )}
-              <circle
-                cx={cx}
-                cy={cy}
-                r={isBest ? dotR * 1.3 : dotR}
-                fill={color}
-                stroke={isBest ? '#fff' : 'none'}
-                strokeWidth={isBest ? 0.05 : 0}
-              />
-            </g>
+            <circle
+              key={i}
+              cx={cx}
+              cy={cy}
+              r={isBest ? dotR * 1.3 : dotR}
+              fill={color}
+              stroke={isBest ? '#fff' : 'none'}
+              strokeWidth={isBest ? 0.05 : 0}
+              opacity={hasReached ? 0.4 : 0.85}
+            />
           )
         })}
+
+        {/* Heatmap legend (gradient bar) */}
+        <defs>
+          <linearGradient id="heatGrad" x1="0" y1="0" x2="1" y2="0">
+            <stop offset="0%" stopColor={heatColor(0)} />
+            <stop offset="20%" stopColor={heatColor(0.2)} />
+            <stop offset="40%" stopColor={heatColor(0.4)} />
+            <stop offset="60%" stopColor={heatColor(0.6)} />
+            <stop offset="80%" stopColor={heatColor(0.8)} />
+            <stop offset="100%" stopColor={heatColor(1)} />
+          </linearGradient>
+        </defs>
       </svg>
+
+      {/* Heatmap legend bar below SVG */}
+      <div className="evo-maze-animation__legend">
+        <span className="evo-maze-animation__legend-label">Frío</span>
+        <div className="evo-maze-animation__legend-bar" />
+        <span className="evo-maze-animation__legend-label">Caliente</span>
+        <span className="evo-maze-animation__legend-max">
+          (máx: {maxHeat} visitas)
+        </span>
+      </div>
 
       <div className="evo-maze-animation__controls">
         {!playing ? (
@@ -195,7 +252,7 @@ export default function MazeAnimationView({ individuals, maze, generation }: Pro
         <button type="button" className="lab-tab" onClick={handleReset} title="Reiniciar">
           &#8635; Reset
         </button>
-        <label className="evo-maze-animation__speed" title="Controla la velocidad de la animaci&oacute;n. M&aacute;s a la derecha = m&aacute;s r&aacute;pido.">
+        <label className="evo-maze-animation__speed" title="Controla la velocidad de la animación. Más a la derecha = más rápido.">
           Velocidad
           <input
             type="range"
@@ -208,7 +265,7 @@ export default function MazeAnimationView({ individuals, maze, generation }: Pro
       </div>
 
       <p className="evo-maze-animation__hint">
-        Cada punto es un individuo movi&eacute;ndose por el laberinto. Los puntos celestes son el mejor, los verdes ya llegaron a la meta.
+        Las celdas se colorean con un mapa de calor seg&uacute;n cu&aacute;ntos individuos pasaron por ah&iacute;. Azul = pocas visitas, rojo = muchas visitas.
       </p>
     </div>
   )
