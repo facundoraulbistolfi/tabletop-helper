@@ -246,17 +246,17 @@ export default function EvoLab() {
           />
           {metricsHistory.length > 0 && (
             <div className="evo-metrics-summary">
-              <div><strong>Generación:</strong> {metricsHistory[metricsHistory.length - 1].generation}</div>
-              <div><strong>Mejor fitness:</strong> {metricsHistory[metricsHistory.length - 1].best}</div>
-              <div><strong>Promedio:</strong> {metricsHistory[metricsHistory.length - 1].avg.toFixed(2)}</div>
-              <div><strong>Peor:</strong> {metricsHistory[metricsHistory.length - 1].worst}</div>
+              <div title="Número de generación actual"><strong>Generación:</strong> {metricsHistory[metricsHistory.length - 1].generation}</div>
+              <div title="Fitness más alto de la población actual. En Maze Runner el máximo teórico es 1000."><strong>Mejor fitness:</strong> {metricsHistory[metricsHistory.length - 1].best}</div>
+              <div title="Promedio de fitness de todos los individuos. Sube a medida que la población mejora."><strong>Promedio:</strong> {metricsHistory[metricsHistory.length - 1].avg.toFixed(2)}</div>
+              <div title="Fitness más bajo de la población. Si sube, la población converge."><strong>Peor:</strong> {metricsHistory[metricsHistory.length - 1].worst}</div>
               {metricsHistory[metricsHistory.length - 1].diversity !== undefined && (
-                <div><strong>Diversidad:</strong> {metricsHistory[metricsHistory.length - 1].diversity!.toFixed(3)}</div>
+                <div title="Entropía de Shannon promedio por gen (0–1). Valores altos = más variedad genética; valores bajos = convergencia."><strong>Diversidad:</strong> {metricsHistory[metricsHistory.length - 1].diversity!.toFixed(3)}</div>
               )}
               {mazeStats && (
                 <>
-                  <div><strong>Llegan a la meta:</strong> {mazeStats.reachedPct.toFixed(1)}%</div>
-                  <div><strong>Dist. promedio:</strong> {mazeStats.avgDistance.toFixed(1)}</div>
+                  <div title="Porcentaje de individuos que llegan a la meta en la generación actual"><strong>Llegan a la meta:</strong> {mazeStats.reachedPct.toFixed(1)}%</div>
+                  <div title="Distancia Manhattan promedio de todos los individuos a la meta. Baja a medida que la población se acerca."><strong>Dist. promedio:</strong> {mazeStats.avgDistance.toFixed(1)}</div>
                 </>
               )}
             </div>

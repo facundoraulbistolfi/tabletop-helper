@@ -85,9 +85,9 @@ export default function MazeAnimationView({ individuals, maze, generation }: Pro
   return (
     <div className="evo-maze-animation">
       <div className="evo-maze-animation__header">
-        <span><strong>Gen:</strong> {generation}</span>
-        <span><strong>Paso:</strong> {step + 1} / {maxSteps}</span>
-        <span><strong>Llegaron:</strong> {reachedCount} / {individuals.length}</span>
+        <span title="N&uacute;mero de generaci&oacute;n que se est&aacute; animando"><strong>Gen:</strong> {generation}</span>
+        <span title="Paso actual de la animaci&oacute;n. Cada paso es un movimiento (arriba/derecha/abajo/izquierda) de todos los individuos."><strong>Paso:</strong> {step + 1} / {maxSteps}</span>
+        <span title="Cu&aacute;ntos individuos ya alcanzaron la meta hasta este paso"><strong>Llegaron:</strong> {reachedCount} / {individuals.length}</span>
       </div>
 
       <svg
@@ -195,7 +195,7 @@ export default function MazeAnimationView({ individuals, maze, generation }: Pro
         <button type="button" className="lab-tab" onClick={handleReset} title="Reiniciar">
           &#8635; Reset
         </button>
-        <label className="evo-maze-animation__speed">
+        <label className="evo-maze-animation__speed" title="Controla la velocidad de la animaci&oacute;n. M&aacute;s a la derecha = m&aacute;s r&aacute;pido.">
           Velocidad
           <input
             type="range"

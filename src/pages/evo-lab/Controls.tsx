@@ -34,24 +34,24 @@ export default function Controls({
       <div className="evo-controls">
         <div className="evo-controls__buttons">
           {!initialized ? (
-            <button type="button" className="lab-tab is-active" onClick={onInit}>
+            <button type="button" className="lab-tab is-active" onClick={onInit} title="Crea la poblaci&oacute;n inicial con la configuraci&oacute;n actual y pasa a la tab Evoluci&oacute;n.">
               Inicializar
             </button>
           ) : (
             <>
               {running ? (
-                <button type="button" className="lab-tab is-active" onClick={onPause}>
+                <button type="button" className="lab-tab is-active" onClick={onPause} title="Pausa la evoluci&oacute;n autom&aacute;tica. Pod&eacute;s seguir avanzando con Step.">
                   Pausar
                 </button>
               ) : (
-                <button type="button" className="lab-tab is-active" onClick={onRun} disabled={atEnd}>
+                <button type="button" className="lab-tab is-active" onClick={onRun} disabled={atEnd} title="Ejecuta la evoluci&oacute;n autom&aacute;ticamente hasta pausar o llegar al l&iacute;mite de generaciones.">
                   Iniciar
                 </button>
               )}
-              <button type="button" className="lab-tab" onClick={onStep} disabled={running || atEnd}>
+              <button type="button" className="lab-tab" onClick={onStep} disabled={running || atEnd} title="Avanza exactamente una generaci&oacute;n. &Uacute;til para observar cambios paso a paso.">
                 Step
               </button>
-              <button type="button" className="lab-tab" onClick={onReset}>
+              <button type="button" className="lab-tab" onClick={onReset} title="Descarta el experimento actual y vuelve a la pantalla de configuraci&oacute;n.">
                 Reset
               </button>
             </>
@@ -60,8 +60,8 @@ export default function Controls({
 
         {initialized && (
           <div className="evo-controls__info">
-            <span className="evo-controls__gen">Gen {generation} / {maxGenerations}</span>
-            <label className="evo-controls__speed">
+            <span className="evo-controls__gen" title="Generaci&oacute;n actual / m&aacute;ximo configurado. La evoluci&oacute;n se detiene al llegar al l&iacute;mite.">Gen {generation} / {maxGenerations}</span>
+            <label className="evo-controls__speed" title="Milisegundos entre generaciones. 0ms = m&aacute;xima velocidad (procesa en lotes). Valores altos permiten ver la evoluci&oacute;n paso a paso.">
               <span>{tickMs}ms</span>
               <input
                 type="range"
