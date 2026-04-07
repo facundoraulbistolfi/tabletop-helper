@@ -47,6 +47,11 @@ const mazeRunner: ProblemDefinition = {
   description: 'Evoluciona secuencias de movimientos para recorrer un laberinto desde el inicio hasta la meta.',
   defaultGenomeLength: 60,  // 30 steps * 2 bits
   buildContext(config, _rng) {
+    // Support custom maze data passed directly through problemParams
+    const customMaze = config.problemParams?.customMaze as MazePreset | undefined
+    if (customMaze) {
+      return { maze: customMaze }
+    }
     const mazeId = (config.problemParams?.mazePresetId as string) ?? 'easy-corridor'
     const maze = getMazePreset(mazeId)
     if (!maze) {

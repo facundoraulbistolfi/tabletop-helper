@@ -54,11 +54,11 @@ export default function MazePopulationView({
     <div className="evo-maze-population">
       {/* ── Header summary ── */}
       <div className="evo-maze-population__header">
-        <span><strong>Maze:</strong> {maze.name}</span>
-        <span><strong>Gen:</strong> {generation}</span>
-        <span><strong>Mejor:</strong> {bestFitness}</span>
-        <span><strong>Llegan:</strong> {reachedPct}%</span>
-        <span><strong>Dist. prom:</strong> {avgDist}</span>
+        <span title="Laberinto activo en este experimento"><strong>Maze:</strong> {maze.name}</span>
+        <span title="N&uacute;mero de generaci&oacute;n actual"><strong>Gen:</strong> {generation}</span>
+        <span title="Fitness m&aacute;s alto en la poblaci&oacute;n actual (m&aacute;x. 1000)"><strong>Mejor:</strong> {bestFitness}</span>
+        <span title="Porcentaje de individuos que llegaron a la meta"><strong>Llegan:</strong> {reachedPct}%</span>
+        <span title="Distancia Manhattan promedio de todos los individuos a la meta"><strong>Dist. prom:</strong> {avgDist}</span>
       </div>
 
       {/* ── Didactic panel ── */}

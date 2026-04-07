@@ -2,7 +2,9 @@ import { LabPanel, LabAccordionSection } from '../chinchon-lab/Layout'
 import { PRESETS } from '../../lib/genetic-lab/presets'
 import { PROBLEMS } from '../../lib/genetic-lab/problems'
 import { MAZE_PRESETS } from '../../lib/genetic-lab/maze-runner-maps'
+import MazeEditor, { buildDefaultCustomMaze } from './MazeEditor'
 import type { ExperimentConfig } from '../../lib/genetic-lab/types'
+import type { MazePreset } from '../../lib/genetic-lab/maze-runner-types'
 
 type Props = {
   config: ExperimentConfig
@@ -14,9 +16,17 @@ function clamp(value: number, min: number, max: number): number {
   return Math.min(max, Math.max(min, value))
 }
 
+/** Small help icon with tooltip */
+function Hint({ text }: { text: string }) {
+  return (
+    <span className="evo-hint" title={text}>?</span>
+  )
+}
+
 export default function ConfigForm({ config, onChange, disabled }: Props) {
   const isMaze = config.problemId === 'maze-runner'
   const maxSteps = isMaze ? ((config.problemParams?.maxSteps as number) ?? 25) : 0
+  const isCustomMaze = isMaze && (config.problemParams?.mazePresetId === 'custom')
 
   function set<K extends keyof ExperimentConfig>(key: K, value: ExperimentConfig[K]) {
     onChange({ ...config, [key]: value })
@@ -61,9 +71,27 @@ export default function ConfigForm({ config, onChange, disabled }: Props) {
   }
 
   function handleMazePresetChange(mazePresetId: string) {
+    if (mazePresetId === 'custom') {
+      // Initialize a custom maze
+      const customMaze = buildDefaultCustomMaze(8, 6)
+      onChange({
+        ...config,
+        problemParams: { ...config.problemParams, mazePresetId: 'custom', customMaze },
+      })
+    } else {
+      // Remove customMaze when switching to a preset
+      const { customMaze: _, ...rest } = (config.problemParams ?? {}) as Record<string, unknown>
+      onChange({
+        ...config,
+        problemParams: { ...rest, mazePresetId },
+      })
+    }
+  }
+
+  function handleCustomMazeChange(maze: MazePreset) {
     onChange({
       ...config,
-      problemParams: { ...config.problemParams, mazePresetId },
+      problemParams: { ...config.problemParams, mazePresetId: 'custom', customMaze: maze },
     })
   }
 
@@ -75,6 +103,8 @@ export default function ConfigForm({ config, onChange, disabled }: Props) {
       problemParams: { ...config.problemParams, maxSteps: clamped },
     })
   }
+
+  const currentCustomMaze = (config.problemParams?.customMaze as MazePreset | undefined) ?? null
 
   return (
     <div>
@@ -109,7 +139,7 @@ export default function ConfigForm({ config, onChange, disabled }: Props) {
 
       <LabAccordionSection title="Problema" defaultOpen>
         <label>
-          Problema
+          Problema <Hint text="Elegí qué problema debe resolver el algoritmo genético. Target BitGrid busca copiar un patrón binario; Maze Runner busca un camino en un laberinto." />
           <select
             value={config.problemId}
             onChange={e => handleProblemChange(e.target.value)}
@@ -124,7 +154,7 @@ export default function ConfigForm({ config, onChange, disabled }: Props) {
         {isMaze && (
           <div className="evo-form-grid" style={{ marginTop: '0.75rem' }}>
             <label>
-              Laberinto
+              Laberinto <Hint text="Elegí un laberinto predefinido o 'Custom' para diseñar el tuyo. Los más grandes son más difíciles de resolver." />
               <select
                 value={(config.problemParams?.mazePresetId as string) ?? 'easy-corridor'}
                 onChange={e => handleMazePresetChange(e.target.value)}
@@ -133,10 +163,11 @@ export default function ConfigForm({ config, onChange, disabled }: Props) {
                 {MAZE_PRESETS.map(m => (
                   <option key={m.id} value={m.id}>{m.name} ({m.width}&times;{m.height})</option>
                 ))}
+                <option value="custom">Custom (editable)</option>
               </select>
             </label>
             <label>
-              Pasos m&aacute;x.
+              Pasos m&aacute;x. <Hint text="Cantidad máxima de movimientos que puede hacer cada individuo. Más pasos permiten recorridos más largos pero aumentan el espacio de búsqueda." />
               <input
                 type="number"
                 min={5}
@@ -147,7 +178,7 @@ export default function ConfigForm({ config, onChange, disabled }: Props) {
               />
             </label>
             <label>
-              Largo del genoma
+              Largo del genoma <Hint text="Se calcula automáticamente como pasos × 2 (2 bits por movimiento: arriba, derecha, abajo, izquierda)." />
               <input
                 type="number"
                 value={config.genomeLength}
@@ -158,12 +189,21 @@ export default function ConfigForm({ config, onChange, disabled }: Props) {
             </label>
           </div>
         )}
+
+        {/* Custom maze editor */}
+        {isMaze && isCustomMaze && currentCustomMaze && (
+          <MazeEditor
+            maze={currentCustomMaze}
+            onChange={handleCustomMazeChange}
+            disabled={disabled}
+          />
+        )}
       </LabAccordionSection>
 
       <LabAccordionSection title="Población y genoma" defaultOpen>
         <div className="evo-form-grid">
           <label>
-            Seed
+            Seed <Hint text="Semilla del generador de números aleatorios. Con la misma semilla y config, la evolución es idéntica. Cambiala para explorar resultados distintos." />
             <div style={{ display: 'flex', gap: '0.5rem' }}>
               <input
                 type="number"
@@ -183,7 +223,7 @@ export default function ConfigForm({ config, onChange, disabled }: Props) {
             </div>
           </label>
           <label>
-            Población
+            Poblaci&oacute;n <Hint text="Cantidad de individuos por generación. Más individuos = más diversidad pero más lento. Valores típicos: 50–200." />
             <input
               type="number"
               min={10}
@@ -195,7 +235,7 @@ export default function ConfigForm({ config, onChange, disabled }: Props) {
           </label>
           {!isMaze && (
             <label>
-              Largo del genoma
+              Largo del genoma <Hint text="Cantidad de bits del genoma de cada individuo. Define el tamaño del patrón que debe coincidir con el target." />
               <input
                 type="number"
                 min={4}
@@ -207,7 +247,7 @@ export default function ConfigForm({ config, onChange, disabled }: Props) {
             </label>
           )}
           <label>
-            Elitismo
+            Elitismo <Hint text="Cantidad de mejores individuos que pasan directamente a la siguiente generación sin cruce ni mutación. Preserva las mejores soluciones encontradas." />
             <input
               type="number"
               min={0}
@@ -218,7 +258,7 @@ export default function ConfigForm({ config, onChange, disabled }: Props) {
             />
           </label>
           <label>
-            Generaciones m&aacute;x.
+            Generaciones m&aacute;x. <Hint text="Límite de generaciones para la evolución. El algoritmo se detiene al llegar a este número aunque no haya convergido." />
             <input
               type="number"
               min={10}
@@ -234,7 +274,7 @@ export default function ConfigForm({ config, onChange, disabled }: Props) {
       <LabAccordionSection title="Selección">
         <div className="evo-form-grid">
           <label>
-            M&eacute;todo
+            M&eacute;todo <Hint text="Cómo se eligen los padres para reproducirse. Torneo: se seleccionan k individuos al azar y gana el mejor. Ruleta: la probabilidad de ser elegido es proporcional al fitness." />
             <select
               value={config.selection.method}
               onChange={e => setSelection(e.target.value as 'tournament' | 'roulette')}
@@ -246,7 +286,7 @@ export default function ConfigForm({ config, onChange, disabled }: Props) {
           </label>
           {config.selection.method === 'tournament' && (
             <label>
-              k (tama&ntilde;o torneo)
+              k (tama&ntilde;o torneo) <Hint text="Cuántos individuos compiten en cada torneo. k más alto = más presión selectiva (los mejores se reproducen más). k bajo permite más diversidad." />
               <input
                 type="number"
                 min={2}
@@ -263,7 +303,7 @@ export default function ConfigForm({ config, onChange, disabled }: Props) {
       <LabAccordionSection title="Cruce">
         <div className="evo-form-grid">
           <label>
-            M&eacute;todo
+            M&eacute;todo <Hint text="Cómo se combinan los genomas de dos padres. Un punto: se corta en un lugar y se intercambian segmentos. Dos puntos: se corta en dos lugares. Uniforme: cada gen se hereda aleatoriamente de un padre u otro." />
             <select
               value={config.crossover.method}
               onChange={e => setCrossover(e.target.value as 'onePoint' | 'twoPoint' | 'uniform', config.crossover.rate)}
@@ -275,7 +315,7 @@ export default function ConfigForm({ config, onChange, disabled }: Props) {
             </select>
           </label>
           <label>
-            Tasa de cruce
+            Tasa de cruce <Hint text="Probabilidad (0 a 1) de que dos padres intercambien material genético. Si no se cruzan, uno de los padres pasa directo. Valores típicos: 0.7–0.95." />
             <input
               type="number"
               min={0}
@@ -292,7 +332,7 @@ export default function ConfigForm({ config, onChange, disabled }: Props) {
       <LabAccordionSection title="Mutación">
         <div className="evo-form-grid">
           <label>
-            Tasa por gen
+            Tasa por gen <Hint text="Probabilidad de que cada bit individual del genoma se invierta (0↔1). Valores bajos (0.01–0.05) dan mutaciones sutiles; valores altos introducen mucha variación pero pueden destruir buenas soluciones." />
             <input
               type="number"
               min={0}

@@ -7,6 +7,7 @@ import Inspector from './evo-lab/Inspector'
 import FitnessChart from './evo-lab/FitnessChart'
 import MazePopulationView from './evo-lab/MazePopulationView'
 import MazeInspectorDetails from './evo-lab/MazeInspectorDetails'
+import MazeAnimationView from './evo-lab/MazeAnimationView'
 import { PRESETS } from '../lib/genetic-lab/presets'
 import { computeMetrics } from '../lib/genetic-lab/metrics'
 import { computeMazePopulationStats } from '../lib/genetic-lab/maze-runner'
@@ -14,9 +15,10 @@ import type { ExperimentConfig, PopulationSnapshot, MetricsTick, Genome } from '
 import type { GeneticLabWorkerRequest, GeneticLabWorkerMessage } from '../lib/genetic-lab-worker-types'
 import type { MazePreset } from '../lib/genetic-lab/maze-runner-types'
 
-const TABS = [
+const TABS_BASE = [
   { value: 'experiment', label: 'Experimento', shortLabel: 'Config' },
   { value: 'evolution', label: 'Evolución', shortLabel: 'Evo' },
+  { value: 'animation', label: 'Animación', shortLabel: 'Anim' },
   { value: 'metrics', label: 'Métricas', shortLabel: 'Stats' },
 ]
 
@@ -36,6 +38,11 @@ export default function EvoLab() {
   const runTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   const isMaze = config.problemId === 'maze-runner'
+
+  // Only show animation tab for maze problems
+  const TABS = isMaze
+    ? TABS_BASE
+    : TABS_BASE.filter(t => t.value !== 'animation')
 
   useEffect(() => {
     const worker = new Worker(
@@ -215,6 +222,22 @@ export default function EvoLab() {
         </>
       )}
 
+      {tab === 'animation' && isMaze && (
+        <>
+          {snapshot && mazeCtx ? (
+            <MazeAnimationView
+              individuals={snapshot.individuals}
+              maze={mazeCtx}
+              generation={snapshot.generation}
+            />
+          ) : (
+            <LabPanel title="Animación" subtitle="Inicializá un experimento para ver la animación.">
+              <p style={{ color: '#888', fontSize: '0.9rem' }}>Usa el botón Inicializar en la barra inferior.</p>
+            </LabPanel>
+          )}
+        </>
+      )}
+
       {tab === 'metrics' && (
         <LabPanel title="Métricas de fitness" subtitle="Curvas best / promedio / peor por generación.">
           <FitnessChart
@@ -223,17 +246,17 @@ export default function EvoLab() {
           />
           {metricsHistory.length > 0 && (
             <div className="evo-metrics-summary">
-              <div><strong>Generación:</strong> {metricsHistory[metricsHistory.length - 1].generation}</div>
-              <div><strong>Mejor fitness:</strong> {metricsHistory[metricsHistory.length - 1].best}</div>
-              <div><strong>Promedio:</strong> {metricsHistory[metricsHistory.length - 1].avg.toFixed(2)}</div>
-              <div><strong>Peor:</strong> {metricsHistory[metricsHistory.length - 1].worst}</div>
+              <div title="Número de generación actual"><strong>Generación:</strong> {metricsHistory[metricsHistory.length - 1].generation}</div>
+              <div title="Fitness más alto de la población actual. En Maze Runner el máximo teórico es 1000."><strong>Mejor fitness:</strong> {metricsHistory[metricsHistory.length - 1].best}</div>
+              <div title="Promedio de fitness de todos los individuos. Sube a medida que la población mejora."><strong>Promedio:</strong> {metricsHistory[metricsHistory.length - 1].avg.toFixed(2)}</div>
+              <div title="Fitness más bajo de la población. Si sube, la población converge."><strong>Peor:</strong> {metricsHistory[metricsHistory.length - 1].worst}</div>
               {metricsHistory[metricsHistory.length - 1].diversity !== undefined && (
-                <div><strong>Diversidad:</strong> {metricsHistory[metricsHistory.length - 1].diversity!.toFixed(3)}</div>
+                <div title="Entropía de Shannon promedio por gen (0–1). Valores altos = más variedad genética; valores bajos = convergencia."><strong>Diversidad:</strong> {metricsHistory[metricsHistory.length - 1].diversity!.toFixed(3)}</div>
               )}
               {mazeStats && (
                 <>
-                  <div><strong>Llegan a la meta:</strong> {mazeStats.reachedPct.toFixed(1)}%</div>
-                  <div><strong>Dist. promedio:</strong> {mazeStats.avgDistance.toFixed(1)}</div>
+                  <div title="Porcentaje de individuos que llegan a la meta en la generación actual"><strong>Llegan a la meta:</strong> {mazeStats.reachedPct.toFixed(1)}%</div>
+                  <div title="Distancia Manhattan promedio de todos los individuos a la meta. Baja a medida que la población se acerca."><strong>Dist. promedio:</strong> {mazeStats.avgDistance.toFixed(1)}</div>
                 </>
               )}
             </div>
