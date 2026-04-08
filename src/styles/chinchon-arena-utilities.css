@@ -1398,6 +1398,23 @@
   color:#0f172a;
 }
 
+.lab-debug-badge{
+  display:inline-flex;
+  align-items:center;
+  gap:.2rem;
+  padding:.1rem .4rem;
+  border:1px solid rgba(234,179,8,.35);
+  border-radius:4px;
+  background:rgba(234,179,8,.1);
+  color:#eab308;
+  font-size:.6rem;
+  font-weight:700;
+  letter-spacing:.05em;
+  text-transform:uppercase;
+  vertical-align:middle;
+  cursor:help;
+}
+
 .lab-config-grid{
   display:grid;
   gap:1rem;

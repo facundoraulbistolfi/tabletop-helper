@@ -1,4 +1,5 @@
 import { describe, it, expect } from "vitest";
+import type { GameContext } from "./chinchon-bot-game";
 import {
   Card,
   createDeck,
@@ -19,9 +20,25 @@ import {
 const c = (rank: number, suit: number): Card => ({ rank, suit });
 const joker = (): Card => ({ rank: 0, suit: -1 });
 
+// Simple shouldDraw: take from discard if it improves resto by > 3
+function testShouldDraw(hand: Card[], top: Card, _ctx: GameContext): boolean {
+  const currentM = findBestMelds(hand);
+  const replaced = [...hand];
+  // Try replacing the worst free card
+  const inMeld = new Set(currentM.meldsCut.flat());
+  let wi = -1, ws = -1;
+  hand.forEach((card, i) => {
+    if (!isJoker(card) && !inMeld.has(i) && cardRest(card) > ws) { ws = cardRest(card); wi = i; }
+  });
+  if (wi === -1) return false;
+  replaced[wi] = top;
+  const newM = findBestMelds(replaced);
+  return currentM.resto - newM.resto > 3;
+}
+
 // A simple greedy strategy for tests: always cuts when minFree <= 1 and resto <= 5
 const greedyStrategy = (): Strategy => ({
-  pickDiscard: (hand) => {
+  pickDiscard: (hand, _ctx) => {
     const m = findBestMelds(hand);
     const inMeld = new Set(m.meldsCut.flat());
     let wi = -1, ws = -1;
@@ -30,13 +47,13 @@ const greedyStrategy = (): Strategy => ({
     });
     return wi === -1 ? hand.length - 1 : wi;
   },
-  canCut: (m7) => m7.minFree <= 1 && m7.resto <= 5,
-  drawConfig: { mode: "smart", restoThreshold: 3 },
+  canCut: (m7, _hand, _ctx) => m7.minFree <= 1 && m7.resto <= 5,
+  shouldDraw: testShouldDraw,
 });
 
 // Patient strategy: only cuts when all cards are in melds (for -10 or chinchón)
 const patientStrategy = (): Strategy => ({
-  pickDiscard: (hand) => {
+  pickDiscard: (hand, _ctx) => {
     const m = findBestMelds(hand);
     const inMeld = new Set(m.meldsCut.flat());
     let wi = -1, ws = -1;
@@ -45,8 +62,8 @@ const patientStrategy = (): Strategy => ({
     });
     return wi === -1 ? hand.length - 1 : wi;
   },
-  canCut: (m7) => m7.minFree === 0,
-  drawConfig: { mode: "smart", restoThreshold: 3 },
+  canCut: (m7, _hand, _ctx) => m7.minFree === 0,
+  shouldDraw: testShouldDraw,
 });
 
 /* ==============================================================
@@ -386,7 +403,7 @@ describe("playRoundScored", () => {
 
     // Strategy: discard whichever card is not needed for chinchón, cut when chinchón is present
     const chinchonStrategy: Strategy = {
-      pickDiscard: (hand) => {
+      pickDiscard: (hand, _ctx) => {
         for (let i = 0; i < hand.length; i++) {
           if (isJoker(hand[i])) continue;
           const test = hand.filter((_, j) => j !== i);
@@ -401,7 +418,8 @@ describe("playRoundScored", () => {
         });
         return wi === -1 ? hand.length - 1 : wi;
       },
-      canCut: (_m7, _score, hand) => checkChinchon(hand),
+      canCut: (_m7, hand, _ctx) => checkChinchon(hand),
+      shouldDraw: testShouldDraw,
     };
 
     const result = playRoundScored(chinchonHand, h1, deck, chinchonStrategy, patientStrategy(), [0, 0]);
