@@ -1,5 +1,13 @@
 import type { TournamentFixtureMatch, TournamentMatchSnapshot, TournamentResults } from './chinchon-tournament'
 import type { BotConfig } from './chinchon-bot-presets'
+import type {
+  EvoMetricSummary,
+  EvoMetricsTick,
+  EvolutionCandidateProgress,
+  FitnessMode,
+  StopReason,
+} from './chinchon-evo-lab'
+import type { BotMirrorMetrics, SimulationExamples } from './chinchon-sim-metrics'
 
 export type WorkerJobBase = {
   jobId: number
@@ -28,6 +36,27 @@ export type RunBenchmarkRequest = WorkerJobBase & {
   botId: string
 }
 
+export type RunEvolutionRequest = WorkerJobBase & {
+  type: 'runEvolution'
+  rivalBotIndex: number
+  seedBotIndex: number
+  populationSize: number
+  simsPerEval: number
+  useStabilizedEvaluation: boolean
+  stabilizeDecimals: number
+  maxGenerations: number
+  elitismCount: number
+  mutationRate: number
+  mutationSigma: number
+  crossoverRate: number
+  fitnessMode: FitnessMode
+  selectionMethod: 'tournament' | 'roulette'
+  tournamentK: number
+  absoluteMargin: number | null
+  targetRate: number | null
+  stagnationLimit: number | null
+}
+
 export type CancelRequest = {
   type: 'cancel'
   jobId?: number
@@ -37,6 +66,7 @@ export type LabWorkerRequest =
   | RunSimRequest
   | RunTournamentRequest
   | RunBenchmarkRequest
+  | RunEvolutionRequest
   | CancelRequest
 
 export type SimProgressMessage = {
@@ -44,13 +74,13 @@ export type SimProgressMessage = {
   jobId: number
   progress: number
   chartData: Record<string, number>[]
-  roundWins: [number, number]
-  gameWins: [number, number]
-  sweepWins: [number, number, number]
+  botMetrics: [BotMirrorMetrics, BotMirrorMetrics]
   totalRounds: number
-  chinchonWins: [number, number]
-  winRateHistory: { simulations: number; rate0: number; rate1: number }[]
-  sweepRateHistory: { pairs: number; rate0: number; rate1: number }[]
+  splitMirrorRounds: number
+  orphanRounds: number
+  gameRateHistory: { simulations: number; rate0: number; rate1: number }[]
+  mirrorRoundRateHistory: { mirrorRounds: number; rate0: number; rate1: number }[]
+  examples?: SimulationExamples
   done: number
   stableStop: boolean
 }
@@ -74,7 +104,53 @@ export type TournamentProgressMessage = {
   done: boolean
 }
 
+export type EvoProgressMessage = {
+  type: 'evoProgress'
+  jobId: number
+  fitnessMode: FitnessMode
+  primaryLabel: string
+  secondaryLabel: string | null
+  generation: number
+  bestGeneration: number
+  bestFitness: number
+  avgFitness: number
+  worstFitness: number
+  bestPrimaryRate: number
+  avgPrimaryRate: number
+  bestSecondaryRate: number
+  avgSecondaryRate: number
+  bestMetrics: EvoMetricSummary
+  progress: number
+  generationProgress: number
+  evaluatedIndividuals: number
+  populationSize: number
+  totalEvaluations: number
+  generationIndividuals: EvolutionCandidateProgress[]
+  fitnessHistory: EvoMetricsTick[]
+}
+
+export type EvoDoneMessage = {
+  type: 'evoDone'
+  jobId: number
+  fitnessMode: FitnessMode
+  primaryLabel: string
+  secondaryLabel: string | null
+  bestConfig: BotConfig
+  bestFitness: number
+  bestMetrics: EvoMetricSummary
+  bestGeneration: number
+  totalGenerations: number
+  totalEvaluations: number
+  stopReason: StopReason
+  topConfigs: BotConfig[]
+  topFitnesses: number[]
+  topMetrics: EvoMetricSummary[]
+  fitnessHistory: EvoMetricsTick[]
+}
+
 export type LabWorkerMessage =
   | SimProgressMessage
   | BenchmarkProgressMessage
   | TournamentProgressMessage
+  | EvoProgressMessage
+  | EvoDoneMessage

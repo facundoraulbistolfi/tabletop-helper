@@ -30,6 +30,24 @@ export type ReplayStep =
   | { type: 'turn'; player: 0 | 1; card: Card; kept: boolean; discarded: Card; hands: [Card[], Card[]]; melds: [ReturnType<typeof findBestMelds>, ReturnType<typeof findBestMelds>]; freeCards: number; resto: number; drawn: [number, number] }
   | { type: 'timeout'; winner: 0 | 1; hands: [Card[], Card[]]; melds: [ReturnType<typeof findBestMelds>, ReturnType<typeof findBestMelds>]; restos: [number, number]; frees: [number, number]; drawn: [number, number] }
 
+export type ReplayPair = {
+  replayA: ReplayStep[]
+  replayB: ReplayStep[]
+}
+
+export type SimulatedMirrorRoundRecord = {
+  roundIndex: number
+  scoresWhenBot0Starts: [number, number]
+  scoresWhenBot1Starts: [number, number]
+  roundWhenBot0Starts: SimulatedRoundStat
+  roundWhenBot1Starts: SimulatedRoundStat
+  createReplayPair: () => ReplayPair
+}
+
+type SimulateGamePairOptions = {
+  onMirrorRound?: (round: SimulatedMirrorRoundRecord) => void
+}
+
 const deepHand = (hand: Card[]) => hand.map(card => ({ ...card }))
 const deepDeck = (deck: Card[]) => deck.map(card => ({ ...card }))
 
@@ -37,7 +55,41 @@ export function createRuntimeBots(customConfigs: BotConfig[]) {
   return createBotCatalog(customConfigs)
 }
 
-export function simulateGamePairWithBots(bots: BotRuntime[], bi0: number, bi1: number): [SimulatedGameResult, SimulatedGameResult] {
+function buildReplayPairForMirrorRound(
+  starterHand: Card[],
+  followerHand: Card[],
+  deck: Card[],
+  bot0: BotRuntime,
+  bot1: BotRuntime,
+  scoresWhenBot0Starts: [number, number],
+  scoresWhenBot1Starts: [number, number],
+): ReplayPair {
+  return {
+    replayA: playReplay(
+      deepHand(starterHand),
+      deepHand(followerHand),
+      deepDeck(deck),
+      bot0,
+      bot1,
+      [...scoresWhenBot0Starts] as [number, number],
+    ),
+    replayB: playReplay(
+      deepHand(starterHand),
+      deepHand(followerHand),
+      deepDeck(deck),
+      bot1,
+      bot0,
+      [scoresWhenBot1Starts[1], scoresWhenBot1Starts[0]],
+    ),
+  }
+}
+
+export function simulateGamePairWithBots(
+  bots: BotRuntime[],
+  bi0: number,
+  bi1: number,
+  options?: SimulateGamePairOptions,
+): [SimulatedGameResult, SimulatedGameResult] {
   const bot0 = bots[bi0]
   const bot1 = bots[bi1]
   const scoresA: [number, number] = [0, 0]
@@ -53,8 +105,17 @@ export function simulateGamePairWithBots(bots: BotRuntime[], bi0: number, bi1: n
     const h0 = fullDeck.splice(0, 7)
     const h1 = fullDeck.splice(0, 7)
     const deck = fullDeck
+    const mirrorRoundIndex = !aOver && !bOver ? Math.min(statsA.length, statsB.length) : null
+    const scoresBeforeA: [number, number] = [scoresA[0], scoresA[1]]
+    const scoresBeforeB: [number, number] = [scoresB[0], scoresB[1]]
+    const starterHand = dealer === 0 ? h1 : h0
+    const followerHand = dealer === 0 ? h0 : h1
+    const scoresWhenBot0Starts = dealer === 0 ? scoresBeforeB : scoresBeforeA
+    const scoresWhenBot1Starts = dealer === 0 ? scoresBeforeA : scoresBeforeB
     const starterA = dealer === 0 ? 1 : 0
     const starterB = 1 - starterA
+    let roundStatA: SimulatedRoundStat | null = null
+    let roundStatB: SimulatedRoundStat | null = null
 
     if (!aOver) {
       let resultA
@@ -64,15 +125,16 @@ export function simulateGamePairWithBots(bots: BotRuntime[], bi0: number, bi1: n
         const raw = playRoundScored(deepHand(h1), deepHand(h0), deepDeck(deck), bot1, bot0, [scoresA[1], scoresA[0]])
         resultA = { winner: raw.winner === 0 ? 1 : 0, cards: raw.cards, addScores: [raw.addScores[1], raw.addScores[0]], chinchon: raw.chinchon }
       }
+      roundStatA = { winner: resultA.winner as 0 | 1, cards: resultA.cards, chinchon: resultA.chinchon }
 
       if (resultA.chinchon) {
         aOver = true
-        statsA.push({ winner: resultA.winner as 0 | 1, cards: resultA.cards, chinchon: true })
+        statsA.push(roundStatA)
         scoresA[resultA.winner === 0 ? 1 : 0] = 999
       } else {
         scoresA[0] += resultA.addScores[0]
         scoresA[1] += resultA.addScores[1]
-        statsA.push({ winner: resultA.winner as 0 | 1, cards: resultA.cards, chinchon: false })
+        statsA.push(roundStatA)
         if (scoresA[0] >= 100 || scoresA[1] >= 100) aOver = true
       }
     }
@@ -85,17 +147,40 @@ export function simulateGamePairWithBots(bots: BotRuntime[], bi0: number, bi1: n
         const raw = playRoundScored(deepHand(h0), deepHand(h1), deepDeck(deck), bot1, bot0, [scoresB[1], scoresB[0]])
         resultB = { winner: raw.winner === 0 ? 1 : 0, cards: raw.cards, addScores: [raw.addScores[1], raw.addScores[0]], chinchon: raw.chinchon }
       }
+      roundStatB = { winner: resultB.winner as 0 | 1, cards: resultB.cards, chinchon: resultB.chinchon }
 
       if (resultB.chinchon) {
         bOver = true
-        statsB.push({ winner: resultB.winner as 0 | 1, cards: resultB.cards, chinchon: true })
+        statsB.push(roundStatB)
         scoresB[resultB.winner === 0 ? 1 : 0] = 999
       } else {
         scoresB[0] += resultB.addScores[0]
         scoresB[1] += resultB.addScores[1]
-        statsB.push({ winner: resultB.winner as 0 | 1, cards: resultB.cards, chinchon: false })
+        statsB.push(roundStatB)
         if (scoresB[0] >= 100 || scoresB[1] >= 100) bOver = true
       }
+    }
+
+    if (mirrorRoundIndex != null && roundStatA && roundStatB) {
+      const roundWhenBot0Starts = dealer === 0 ? roundStatB : roundStatA
+      const roundWhenBot1Starts = dealer === 0 ? roundStatA : roundStatB
+      options?.onMirrorRound?.({
+        roundIndex: mirrorRoundIndex,
+        scoresWhenBot0Starts,
+        scoresWhenBot1Starts,
+        roundWhenBot0Starts,
+        roundWhenBot1Starts,
+        createReplayPair: () =>
+          buildReplayPairForMirrorRound(
+            starterHand,
+            followerHand,
+            deck,
+            bot0,
+            bot1,
+            scoresWhenBot0Starts,
+            scoresWhenBot1Starts,
+          ),
+      })
     }
 
     dealer = 1 - dealer
@@ -275,8 +360,5 @@ export function generateReplayPair(customConfigs: BotConfig[], bi0: number, bi1:
   const h1 = fullDeck.splice(0, 7)
   const deck = fullDeck
 
-  return {
-    replayA: playReplay(deepHand(h0), deepHand(h1), deepDeck(deck), bots[bi0], bots[bi1], [0, 0]),
-    replayB: playReplay(deepHand(h0), deepHand(h1), deepDeck(deck), bots[bi1], bots[bi0], [0, 0]),
-  }
+  return buildReplayPairForMirrorRound(h0, h1, deck, bots[bi0], bots[bi1], [0, 0], [0, 0])
 }

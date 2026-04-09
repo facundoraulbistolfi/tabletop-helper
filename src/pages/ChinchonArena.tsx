@@ -11,10 +11,11 @@ import {
 import {
   MIN_SIMULATIONS_BEFORE_STABLE_STOP,
   STABLE_SIMULATION_STREAK,
+  compareBotMirrorMetrics,
+  createEmptyBotMirrorMetrics,
+  createEmptySimulationExamples,
   getChinchonWinRate,
-  getNextStableStreak,
-  getTruncatedWinRates,
-  getWinRates,
+  getPercentOfTotal,
 } from "../lib/chinchon-sim-metrics";
 import {
   TOURNAMENT_FIXTURE,
@@ -26,6 +27,7 @@ import {
 } from "../lib/chinchon-tournament";
 import { generateReplayPair } from "../lib/chinchon-arena-sim";
 import { LabAccordionSection, LabPanel, LabTabBar, StickyActionBar } from "./chinchon-lab/Layout";
+import EvoTab from "./chinchon-lab/EvoTab";
 import ChinchonLabWorker from "../workers/chinchon-lab.worker?worker";
 import {
   CUSTOM_EMOJIS as LIB_CUSTOM_EMOJIS,
@@ -43,6 +45,7 @@ import {
   isV1Config,
   migrateV1toV2,
 } from "../lib/chinchon-bot-presets";
+import { buildEvolutionDescription, defaultEvoConfig, prepareForExport } from "../lib/chinchon-evo-lab";
 
 const LAB_TABS = [
   { value: "sim", label: "🧪 Simulación", shortLabel: "🧪 Sim" },
@@ -50,6 +53,7 @@ const LAB_TABS = [
   { value: "match", label: "🎬 Ver Partida", shortLabel: "🎬 Partida" },
   { value: "play", label: "🃏 Jugar", shortLabel: "🃏 Jugar" },
   { value: "custom", label: "🤖 Bots", shortLabel: "🤖 Bots" },
+  { value: "evo", label: "🧬 Evolución", shortLabel: "🧬 Evo" },
   { value: "reglas", label: "📜 Reglas", shortLabel: "📜 Reglas" },
 ];
 const SIMULATION_OPTIONS = [10, 50, 100, 500, 1000, 5000, 10000, 50000, 100000];
@@ -794,10 +798,19 @@ return [
 }
 
 function generateSimPrompt(cfg0, cfg1, metrics) {
-const { gameWins, roundWins, sweepWins, chinchonWins, totalRounds, numSims } = metrics;
-const total = gameWins[0] + gameWins[1];
-const totalPairs = sweepWins[0] + sweepWins[1] + sweepWins[2];
-return `Tengo dos bots de Chinchón (baraja española de 50 cartas, incluyendo 2 comodines) que corrieron ${totalPairs} simulaciones${totalPairs < numSims ? ` (corte antes del máximo configurado de ${numSims})` : ""}. Cada simulación es un par de partidas espejo (misma repartida, manos invertidas), dando ${total} partidas totales.
+const { botMetrics, splitMirrorRounds, orphanRounds, numSims } = metrics;
+const [bot0, bot1] = botMetrics;
+const totalGames = bot0.gamesPlayed;
+const totalRounds = bot0.roundsPlayed;
+const totalMirrorRounds = bot0.mirrorRoundsPlayed;
+const unresolvedMirrorRounds = Math.max(0, totalMirrorRounds - bot0.mirrorRoundsWon - bot1.mirrorRoundsWon);
+const winnerByCriterion = compareBotMirrorMetrics(bot0, bot1);
+const winnerLine = winnerByCriterion > 0
+  ? `${cfg0.name} queda arriba por el criterio principal (partidas primero, rondas espejo después).`
+  : winnerByCriterion < 0
+    ? `${cfg1.name} queda arriba por el criterio principal (partidas primero, rondas espejo después).`
+    : `Siguen empatados incluso usando partidas primero y rondas espejo después.`;
+return `Tengo dos bots de Chinchón (baraja española de 50 cartas, incluyendo 2 comodines) que corrieron ${metrics.done} simulaciones espejo${metrics.done < numSims ? ` (corte antes del máximo configurado de ${numSims})` : ""}. Cada simulación es un par de partidas completas con la misma repartida, manos invertidas y turno inicial compensado, dando ${totalGames} partidas totales.
 
 REGLAS RELEVANTES:
 - 7 cartas por jugador. En su turno: roba del mazo o descarte, luego descarta 1.
@@ -814,12 +827,14 @@ ${botConfigToPromptText(cfg0)}
 BOT 2:
 ${botConfigToPromptText(cfg1)}
 
-RESULTADOS (${totalPairs} simulaciones = ${total} partidas totales):
-- Partidas ganadas: ${cfg0.emoji} ${cfg0.name} ${gameWins[0]} (${((gameWins[0]/total)*100).toFixed(1)}%) vs ${cfg1.emoji} ${cfg1.name} ${gameWins[1]} (${((gameWins[1]/total)*100).toFixed(1)}%)
-- Rondas ganadas: ${cfg0.name} ${roundWins[0]} (${((roundWins[0]/totalRounds)*100).toFixed(1)}%) vs ${cfg1.name} ${roundWins[1]} (${((roundWins[1]/totalRounds)*100).toFixed(1)}%) — ${totalRounds} rondas totales
-- Promedio de rondas por partida: ${(totalRounds / total).toFixed(1)}
-- Doble espejo (gana ambas con misma repartida): ${cfg0.name} ${sweepWins[0]} (${((sweepWins[0]/totalPairs)*100).toFixed(1)}%), ${cfg1.name} ${sweepWins[1]} (${((sweepWins[1]/totalPairs)*100).toFixed(1)}%), empates ${sweepWins[2]}
-- Chinchones: ${cfg0.name} ${chinchonWins[0]} (${getChinchonWinRate(chinchonWins[0], gameWins[0]).toFixed(1)}% de sus victorias) vs ${cfg1.name} ${chinchonWins[1]} (${getChinchonWinRate(chinchonWins[1], gameWins[1]).toFixed(1)}% de sus victorias)
+RESULTADOS (${metrics.done} simulaciones espejo = ${totalGames} partidas totales):
+- Criterio principal del lab: ${winnerLine}
+- Partidas ganadas: ${cfg0.emoji} ${cfg0.name} ${bot0.gamesWon} (${getPercentOfTotal(bot0.gamesWon, totalGames).toFixed(1)}%) vs ${cfg1.emoji} ${cfg1.name} ${bot1.gamesWon} (${getPercentOfTotal(bot1.gamesWon, totalGames).toFixed(1)}%)
+- Rondas espejo ganadas: ${cfg0.name} ${bot0.mirrorRoundsWon} (${getPercentOfTotal(bot0.mirrorRoundsWon, totalMirrorRounds).toFixed(1)}%) vs ${cfg1.name} ${bot1.mirrorRoundsWon} (${getPercentOfTotal(bot1.mirrorRoundsWon, totalMirrorRounds).toFixed(1)}%) — ${totalMirrorRounds} rondas espejo jugadas, ${unresolvedMirrorRounds} sin ganador espejo
+- Rondas ganadas: ${cfg0.name} ${bot0.roundsWon} (${getPercentOfTotal(bot0.roundsWon, totalRounds).toFixed(1)}%) vs ${cfg1.name} ${bot1.roundsWon} (${getPercentOfTotal(bot1.roundsWon, totalRounds).toFixed(1)}%) — ${totalRounds} rondas totales
+- Rondas sin espejo: ${orphanRounds} en total
+- Promedio de rondas por partida: ${(totalGames > 0 ? totalRounds / totalGames : 0).toFixed(1)}
+- Chinchones: ${cfg0.name} ${bot0.chinchonWins} (${getChinchonWinRate(bot0.chinchonWins, bot0.gamesWon).toFixed(1)}% de sus victorias) vs ${cfg1.name} ${bot1.chinchonWins} (${getChinchonWinRate(bot1.chinchonWins, bot1.gamesWon).toFixed(1)}% de sus victorias)
 
 PREGUNTAS:
 1. ¿Por qué creés que el bot ganador tuvo esa ventaja? Explicá en términos de las mecánicas del juego.
@@ -830,7 +845,7 @@ PREGUNTAS:
 function generateNewBotPrompt(simContext?: string) {
 const schema = `{
   "name": string,         // 1–12 caracteres
-  "emoji": string,        // UNO de: 🧪 ⚡ 🎲 💎 🦾 🧠 🔥 🤡 🎯 🎭 🚀 💀 👻 🕷️ 🍀 🌟 👑 🐉 🦊 🦁 🌊 🏆 🌋 🛡️ 🎪 🎸 🦈 🦋 🌈 🎩 🔱 🌀
+  "emoji": string,        // UNO de: 🧬 🧪 ⚡ 🎲 💎 🦾 🧠 🔥 🤡 🎯 🎭 🚀 💀 👻 🕷️ 🍀 🌟 👑 🐉 🦊 🦁 🌊 🏆 🌋 🛡️ 🎪 🎸 🦈 🦋 🌈 🎩 🔱 🌀
   "colorIdx": number,     // entero 0–7
   "description": string,  // hasta 120 caracteres, descripción de la estrategia
   "global": {
@@ -1599,6 +1614,19 @@ className="bg-gray-700 hover:bg-gray-600 text-white px-4 py-2 rounded-lg text-sm
 );
 }
 
+function describeSimulationExampleRound(round, cfg0, cfg1) {
+  const winnerName = round.winner === 0 ? cfg0.name : cfg1.name;
+  return round.chinchon ? `${winnerName} hace chinchón` : `${winnerName} gana`;
+}
+
+function formatSimulationExampleSummary(example, cfg0, cfg1) {
+  return `A: ${describeSimulationExampleRound(example.summary.roundA, cfg0, cfg1)} · B: ${describeSimulationExampleRound(example.summary.roundB, cfg0, cfg1)}`;
+}
+
+function buildSimulationExampleOriginLabel(example) {
+  return `Ejemplo desde Simulación · ronda espejo ${example.roundIndex + 1} · simulación ${example.simulationIndex + 1}`;
+}
+
 /* ==============================================================
 MAIN
 ============================================================== */
@@ -1624,6 +1652,11 @@ const nextWorkerJobId = useCallback(() => {
   return activeJobIdRef.current;
 }, []);
 
+const requestActiveWorkerCancellation = useCallback(() => {
+  if (activeJobIdRef.current <= 0) return;
+  workerRef.current?.postMessage({ type: "cancel", jobId: activeJobIdRef.current });
+}, []);
+
 const cancelActiveWorkerJob = useCallback(() => {
   if (activeJobIdRef.current <= 0) return;
   workerRef.current?.postMessage({ type: "cancel", jobId: activeJobIdRef.current });
@@ -1646,13 +1679,13 @@ useEffect(() => {
         stopRef.current = data.progress >= 100;
         setProg(data.progress);
         setChartData(data.chartData);
-        setRoundWins(data.roundWins);
-        setGameWins(data.gameWins);
-        setSweepWins(data.sweepWins);
+        setSimBotMetrics(data.botMetrics);
+        if (data.examples) setSimExamples(data.examples);
         setTotalRounds(data.totalRounds);
-        setWinRateHistory(data.winRateHistory);
-        setSweepRateHistory(data.sweepRateHistory);
-        setChinchonWins(data.chinchonWins);
+        setSplitMirrorRounds(data.splitMirrorRounds);
+        setOrphanRounds(data.orphanRounds);
+        setGameRateHistory(data.gameRateHistory);
+        setMirrorRoundRateHistory(data.mirrorRoundRateHistory);
         if (data.progress >= 100) setSimRun(false);
         return;
       }
@@ -1673,6 +1706,19 @@ useEffect(() => {
           stopTourRef.current = true;
           setTourRunning(false);
         }
+        return;
+      }
+
+      if (data.type === "evoProgress") {
+        setEvoRunning(true);
+        setEvoProgress(data);
+        return;
+      }
+
+      if (data.type === "evoDone") {
+        setEvoRunning(false);
+        setEvoResult(data);
+        setEvoProgress(null);
       }
     });
   };
@@ -1688,18 +1734,18 @@ const [simB0, setSimB0] = useState(0);
 const [simB1, setSimB1] = useState(1);
 const [numSims, setNumSims] = useState(50);
 const [chartData, setChartData] = useState(null);
-const [roundWins, setRoundWins] = useState([0, 0]);
-const [gameWins, setGameWins] = useState([0, 0]);
-const [sweepWins, setSweepWins] = useState([0, 0, 0]); // [bot0 sweeps, bot1 sweeps, splits]
+const [simBotMetrics, setSimBotMetrics] = useState([createEmptyBotMirrorMetrics(), createEmptyBotMirrorMetrics()]);
+const [simExamples, setSimExamples] = useState(() => createEmptySimulationExamples());
 const [totalRounds, setTotalRounds] = useState(0);
-const [winRateHistory, setWinRateHistory] = useState<{simulations: number, rate0: number, rate1: number}[]>([]);
-const [sweepRateHistory, setSweepRateHistory] = useState<{pairs: number, rate0: number, rate1: number}[]>([]);
-const [chinchonWins, setChinchonWins] = useState([0, 0]);
+const [splitMirrorRounds, setSplitMirrorRounds] = useState(0);
+const [orphanRounds, setOrphanRounds] = useState(0);
+const [gameRateHistory, setGameRateHistory] = useState<{simulations: number, rate0: number, rate1: number}[]>([]);
+const [mirrorRoundRateHistory, setMirrorRoundRateHistory] = useState<{mirrorRounds: number, rate0: number, rate1: number}[]>([]);
 const [simRun, setSimRun] = useState(false);
 const [prog, setProg] = useState(0);
 const [promptCopied, setPromptCopied] = useState(false);
 const [newBotPromptCopied, setNewBotPromptCopied] = useState(false);
-const [chartTab, setChartTab] = useState<"winrate" | "sweep">("winrate");
+const [chartTab, setChartTab] = useState<"winrate" | "mirror">("winrate");
 const [chartZoom, setChartZoom] = useState<number | null>(null);
 const stopRef = useRef(false);
 
@@ -1710,13 +1756,13 @@ const resetSimState = useCallback(() => {
   setBenchmarking(null);
   setProg(0);
   setChartData(null);
-  setRoundWins([0, 0]);
-  setGameWins([0, 0]);
-  setSweepWins([0, 0, 0]);
+  setSimBotMetrics([createEmptyBotMirrorMetrics(), createEmptyBotMirrorMetrics()]);
+  setSimExamples(createEmptySimulationExamples());
   setTotalRounds(0);
-  setWinRateHistory([]);
-  setSweepRateHistory([]);
-  setChinchonWins([0, 0]);
+  setSplitMirrorRounds(0);
+  setOrphanRounds(0);
+  setGameRateHistory([]);
+  setMirrorRoundRateHistory([]);
   setPromptCopied(false);
   setNewBotPromptCopied(false);
 }, [cancelActiveWorkerJob]);
@@ -1741,6 +1787,13 @@ const [tourStabilizeDecimals, setTourStabilizeDecimals] = useState(1);
 const [tourMatrixView, setTourMatrixView] = useState<"percent" | "absolute">("percent");
 const [tourSection, setTourSection] = useState<"fixture" | "results">("fixture");
 
+// Evolution
+const [evoConfig, setEvoConfig] = useState(() => ({ ...defaultEvoConfig }));
+const [evoRunning, setEvoRunning] = useState(false);
+const [evoProgress, setEvoProgress] = useState(null);
+const [evoResult, setEvoResult] = useState(null);
+const [evoSavedBotId, setEvoSavedBotId] = useState<string | null>(null);
+
 const resetTournamentState = useCallback(() => {
   cancelActiveWorkerJob();
   stopTourRef.current = true;
@@ -1754,13 +1807,17 @@ const resetTournamentState = useCallback(() => {
   setTourSection("fixture");
 }, [cancelActiveWorkerJob]);
 
-const handleTabChange = useCallback((nextTab) => {
-  resetSimState();
-  resetTournamentState();
-  autoRef.current = false;
-  setAutoP(false);
-  setTab(nextTab);
-}, [resetSimState, resetTournamentState]);
+const resetEvoState = useCallback((options?: { preserveConfig?: boolean }) => {
+  cancelActiveWorkerJob();
+  setEvoRunning(false);
+  setBenchmarking(null);
+  setEvoProgress(null);
+  setEvoResult(null);
+  setEvoSavedBotId(null);
+  if (!options?.preserveConfig) {
+    setEvoConfig({ ...defaultEvoConfig });
+  }
+}, [cancelActiveWorkerJob]);
 
 // Match viewer
 const [mvB0, setMvB0] = useState(0);
@@ -1769,7 +1826,23 @@ const [replayPair, setReplayPair] = useState(null);
 const [matchRound, setMatchRound] = useState("A");
 const [si, setSi] = useState(0);
 const [autoP, setAutoP] = useState(false);
+const [matchReplaySource, setMatchReplaySource] = useState(null);
 const autoRef = useRef(false);
+
+const handleTabChange = useCallback((nextTab) => {
+  const returningFromSimExample = tab === "match" && nextTab === "sim" && matchReplaySource?.kind === "simExample";
+  if (!returningFromSimExample) {
+    resetSimState();
+  }
+  resetTournamentState();
+  resetEvoState({ preserveConfig: true });
+  autoRef.current = false;
+  setAutoP(false);
+  if (tab === "match" && nextTab !== "match") {
+    setMatchReplaySource(null);
+  }
+  setTab(nextTab);
+}, [matchReplaySource, resetEvoState, resetSimState, resetTournamentState, tab]);
 
 // Play
 const [botChoice, setBotChoice] = useState(null);
@@ -1833,10 +1906,139 @@ const runBenchmark = useCallback((cfg) => {
   });
 }, [cancelActiveWorkerJob, customConfigs, nextWorkerJobId]);
 
+const runEvolution = useCallback(() => {
+  cancelActiveWorkerJob();
+  const jobId = nextWorkerJobId();
+  setEvoRunning(true);
+  setEvoProgress(null);
+  setEvoResult(null);
+  setEvoSavedBotId(null);
+  workerRef.current?.postMessage({
+    type: "runEvolution",
+    jobId,
+    customConfigs,
+    rivalBotIndex: evoConfig.rivalBotIndex,
+    seedBotIndex: evoConfig.seedBotIndex,
+    populationSize: evoConfig.populationSize,
+    simsPerEval: evoConfig.simsPerEval,
+    useStabilizedEvaluation: evoConfig.useStabilizedEvaluation,
+    stabilizeDecimals: evoConfig.stabilizeDecimals,
+    maxGenerations: evoConfig.maxGenerations,
+    elitismCount: evoConfig.elitismCount,
+    mutationRate: evoConfig.mutationRate,
+    mutationSigma: evoConfig.mutationSigma,
+    crossoverRate: evoConfig.crossoverRate,
+    fitnessMode: evoConfig.fitnessMode,
+    selectionMethod: evoConfig.selectionMethod,
+    tournamentK: evoConfig.tournamentK,
+    absoluteMargin: evoConfig.absoluteMargin,
+    targetRate: evoConfig.targetRate,
+    stagnationLimit: evoConfig.stagnationLimit,
+  });
+}, [cancelActiveWorkerJob, customConfigs, evoConfig, nextWorkerJobId]);
+
+const stopEvolution = useCallback(() => {
+  if (!evoRunning) return;
+  requestActiveWorkerCancellation();
+}, [evoRunning, requestActiveWorkerCancellation]);
+
+const saveEvolvedBot = useCallback((draft) => {
+  if (!evoResult) return { status: "error", message: "No hay un resultado de evolución para guardar." };
+
+  const rival = getBotConfig(evoConfig.rivalBotIndex, customConfigs);
+  const exported = prepareForExport(
+    evoResult.bestConfig,
+    draft.name,
+    draft.emoji,
+    draft.description?.trim()
+      || buildEvolutionDescription(
+        rival.name,
+        evoResult.fitnessMode,
+        evoResult.bestMetrics.primaryRate,
+        evoResult.bestMetrics.secondaryRate,
+        evoResult.totalGenerations,
+      ),
+  );
+
+  let outcome = { status: "error", message: "No se pudo guardar el bot." };
+
+  setCustomConfigs(prev => {
+    const normalizedName = exported.name.trim().toLowerCase();
+    const activeSavedId = evoSavedBotId && prev.some(cfg => cfg.id === evoSavedBotId) ? evoSavedBotId : null;
+    const duplicate = prev.find(cfg => cfg.name.trim().toLowerCase() === normalizedName && cfg.id !== activeSavedId);
+
+    if (duplicate && !draft.replaceExisting) {
+      outcome = { status: "duplicate" };
+      return prev;
+    }
+
+    if (!duplicate && !activeSavedId && prev.length >= MAX_CUSTOM_BOTS) {
+      outcome = { status: "full" };
+      return prev;
+    }
+
+    if (duplicate) {
+      const replacement = { ...exported, id: duplicate.id };
+      outcome = { status: "saved", savedBotId: duplicate.id };
+      return prev.map(cfg => cfg.id === duplicate.id ? replacement : cfg);
+    }
+
+    if (activeSavedId) {
+      const replacement = { ...exported, id: activeSavedId };
+      outcome = { status: "saved", savedBotId: activeSavedId };
+      return prev.map(cfg => cfg.id === activeSavedId ? replacement : cfg);
+    }
+
+    outcome = { status: "saved", savedBotId: exported.id };
+    return [...prev, exported];
+  });
+
+  if (outcome.status === "saved") {
+    setEvoSavedBotId(outcome.savedBotId);
+  }
+
+  return outcome;
+}, [customConfigs, evoConfig.rivalBotIndex, evoResult, evoSavedBotId]);
+
+const openSimFromEvo = useCallback(() => {
+  if (!evoSavedBotId) return;
+  const savedIndex = customConfigs.findIndex(cfg => cfg.id === evoSavedBotId);
+  if (savedIndex < 0) return;
+  resetSimState();
+  autoRef.current = false;
+  setAutoP(false);
+  setSimB0(BUILTIN_BOT_CONFIGS.length + savedIndex);
+  setSimB1(evoConfig.rivalBotIndex);
+  setTab("sim");
+}, [customConfigs, evoConfig.rivalBotIndex, evoSavedBotId, resetSimState]);
+
+const resetEvolutionForNewRun = useCallback(() => {
+  setEvoRunning(false);
+  setEvoProgress(null);
+  setEvoResult(null);
+  setEvoSavedBotId(null);
+}, []);
+
+const openSimExample = useCallback((example) => {
+  if (!example) return;
+  autoRef.current = false;
+  setAutoP(false);
+  setMvB0(simB0);
+  setMvB1(simB1);
+  setReplayPair(example.replayPair);
+  setMatchRound("A");
+  setSi(0);
+  setMatchReplaySource({
+    kind: "simExample",
+    label: buildSimulationExampleOriginLabel(example),
+  });
+  setTab("match");
+}, [simB0, simB1]);
+
 // -- Match viewer --
 const replay = useMemo(() => replayPair ? (matchRound === "A" ? replayPair.replayA : replayPair.replayB) : null, [matchRound, replayPair]);
 const matchSwapped = matchRound === "B";
-const newReplay = () => { autoRef.current = false; setAutoP(false); setReplayPair(generateReplayPair(customConfigs, mvB0, mvB1)); setMatchRound("A"); setSi(0); };
+const newReplay = () => { autoRef.current = false; setAutoP(false); setMatchReplaySource(null); setReplayPair(generateReplayPair(customConfigs, mvB0, mvB1)); setMatchRound("A"); setSi(0); };
 const switchMR = (r) => { autoRef.current = false; setAutoP(false); setMatchRound(r); setSi(0); };
 const mNext = useCallback(() => setSi(p => replay ? Math.min(p + 1, replay.length - 1) : p), [replay]);
 const mPrev = () => setSi(p => Math.max(p - 1, 0));
@@ -1927,8 +2129,14 @@ const resetGame = () => { setG(null); setBotChoice(null); setHistory([]); };
 // Derived
 const step = useMemo(() => replay?.[si], [replay, si]);
 const isLast = replay && si >= replay.length - 1;
-const total = gameWins[0] + gameWins[1];
-const totalR = totalRounds;
+const [simMetrics0, simMetrics1] = simBotMetrics;
+const total = simMetrics0.gamesPlayed;
+const totalMirrorRounds = simMetrics0.mirrorRoundsPlayed;
+const totalR = simMetrics0.roundsPlayed || totalRounds;
+const mirrorRoundsWithoutWinner = Math.max(0, totalMirrorRounds - simMetrics0.mirrorRoundsWon - simMetrics1.mirrorRoundsWon);
+const simLeader = compareBotMirrorMetrics(simMetrics0, simMetrics1);
+const simulationsDone = gameRateHistory[gameRateHistory.length - 1]?.simulations ?? 0;
+const simExamplesReady = !simRun && prog >= 100;
 let canPlayerCut = false;
 if (g?.phase === "playerDiscard" && g.pHand.length <= 8) {
 canPlayerCut = g.pHand.some((c, i) => {
@@ -1961,11 +2169,13 @@ const tournamentCeremony = useMemo(
 const liveRegionMessage = useMemo(() => {
 if (simRun) return `Simulación en curso: ${prog}% completado.`;
 if (tourRunning && tourCurrentMatch) return `Torneo en curso: fecha ${tourCurrentMatch.fechaIndex + 1}, partido ${tourCurrentMatch.matchIndex + 1}.`;
+if (evoRunning && evoProgress) return `Evolución en curso: generación ${evoProgress.generation} de ${evoConfig.maxGenerations}.`;
+if (tab === "evo" && evoResult) return `Evolución finalizada. ${evoResult.primaryLabel}: ${evoResult.bestMetrics.primaryRate.toFixed(1)}%.`;
 if (tab === "torneo" && tourProgress === 100 && safeTourResults) return "Torneo finalizado. Ya podés pasar a resultados.";
 if (tab === "match" && replay) return `Replay listo. Paso ${si + 1} de ${replay.length}.`;
 if (benchmarking) return "Benchmark de bot en curso.";
 return "Chinchón Lab listo.";
-}, [benchmarking, prog, replay, safeTourResults, si, simRun, tab, tourCurrentMatch, tourProgress, tourRunning]);
+}, [benchmarking, evoConfig.maxGenerations, evoProgress, evoResult, evoRunning, prog, replay, safeTourResults, si, simRun, tab, tourCurrentMatch, tourProgress, tourRunning]);
 
 return (
 <main id="main-content" className="min-h-screen bg-gray-950 text-gray-100 flex flex-col items-center px-3 py-5 font-sans chinchon-lab-page">
@@ -2027,10 +2237,65 @@ return (
       {total > 0 && (
         <div className="w-full bg-gray-900 border border-gray-800 rounded-xl p-4 mb-4">
           <h2 className="text-xs text-gray-500 text-center mb-3 uppercase tracking-wider">Partidas ganadas</h2>
+          <p className="text-xs text-gray-600 text-center mb-3">
+            El ganador global se decide primero por partidas y, si empatan, por rondas espejo.
+            {simLeader > 0
+              ? ` Arriba va ${BOT[simB0].name}.`
+              : simLeader < 0
+                ? ` Arriba va ${BOT[simB1].name}.`
+                : " Siguen empatados con ese criterio."}
+          </p>
           <div className="flex items-center justify-between">
-            <div className="text-center flex-1"><div className="text-3xl font-bold" style={{ color: BOT[simB0].color }}>{gameWins[0]}</div><div className="text-xs text-gray-500">{((gameWins[0] / total) * 100).toFixed(4)}%</div><div className="text-xs mt-0.5" style={{ color: BOT[simB0].color }}>{BOT[simB0].name}</div></div>
+            <div className="text-center flex-1"><div className="text-3xl font-bold" style={{ color: BOT[simB0].color }}>{simMetrics0.gamesWon}</div><div className="text-xs text-gray-500">{getPercentOfTotal(simMetrics0.gamesWon, total).toFixed(4)}%</div><div className="text-xs mt-0.5" style={{ color: BOT[simB0].color }}>{BOT[simB0].name}</div></div>
             <div className="text-center px-3"><div className="text-xs text-gray-600">{total} partidas</div><div className="text-gray-700 text-xl">-</div></div>
-            <div className="text-center flex-1"><div className="text-3xl font-bold" style={{ color: BOT[simB1].color }}>{gameWins[1]}</div><div className="text-xs text-gray-500">{((gameWins[1] / total) * 100).toFixed(4)}%</div><div className="text-xs mt-0.5" style={{ color: BOT[simB1].color }}>{BOT[simB1].name}</div></div>
+            <div className="text-center flex-1"><div className="text-3xl font-bold" style={{ color: BOT[simB1].color }}>{simMetrics1.gamesWon}</div><div className="text-xs text-gray-500">{getPercentOfTotal(simMetrics1.gamesWon, total).toFixed(4)}%</div><div className="text-xs mt-0.5" style={{ color: BOT[simB1].color }}>{BOT[simB1].name}</div></div>
+          </div>
+        </div>
+      )}
+
+      {totalMirrorRounds > 0 && (
+        <div className="w-full bg-gray-900 border border-gray-800 rounded-lg p-3 mb-4">
+          <h2 className="text-xs text-gray-500 text-center mb-2 uppercase tracking-wider">Rondas espejo ganadas</h2>
+          <p className="text-xs text-gray-600 text-center mb-3">Una ronda espejo sólo cuenta si el mismo bot gana esa ronda en las dos partidas del par.</p>
+          <div className="flex items-center justify-between">
+            <div className="text-center flex-1">
+              <div className="text-lg font-bold" style={{ color: BOT[simB0].color }}>{simMetrics0.mirrorRoundsWon}</div>
+              <div className="text-xs text-gray-500">{getPercentOfTotal(simMetrics0.mirrorRoundsWon, totalMirrorRounds).toFixed(4)}%</div>
+              {simExamplesReady && simExamples.mirrorRoundsWon[0] && (
+                <>
+                  <button
+                    onClick={() => openSimExample(simExamples.mirrorRoundsWon[0])}
+                    className="mt-2 inline-flex items-center rounded-md border border-gray-700 bg-gray-800 px-2.5 py-1 text-[11px] font-medium text-gray-200 transition-colors hover:border-emerald-500 hover:text-white"
+                  >
+                    Ver ejemplo
+                  </button>
+                  <div className="mt-1 text-[11px] text-gray-500">
+                    {formatSimulationExampleSummary(simExamples.mirrorRoundsWon[0], BOT[simB0], BOT[simB1])}
+                  </div>
+                </>
+              )}
+            </div>
+            <div className="text-center px-3">
+              <div className="text-xs text-gray-500">{mirrorRoundsWithoutWinner} sin ganador espejo</div>
+              <div className="text-xs text-gray-600">{splitMirrorRounds} divididas · {totalMirrorRounds} jugadas</div>
+            </div>
+            <div className="text-center flex-1">
+              <div className="text-lg font-bold" style={{ color: BOT[simB1].color }}>{simMetrics1.mirrorRoundsWon}</div>
+              <div className="text-xs text-gray-500">{getPercentOfTotal(simMetrics1.mirrorRoundsWon, totalMirrorRounds).toFixed(4)}%</div>
+              {simExamplesReady && simExamples.mirrorRoundsWon[1] && (
+                <>
+                  <button
+                    onClick={() => openSimExample(simExamples.mirrorRoundsWon[1])}
+                    className="mt-2 inline-flex items-center rounded-md border border-gray-700 bg-gray-800 px-2.5 py-1 text-[11px] font-medium text-gray-200 transition-colors hover:border-emerald-500 hover:text-white"
+                  >
+                    Ver ejemplo
+                  </button>
+                  <div className="mt-1 text-[11px] text-gray-500">
+                    {formatSimulationExampleSummary(simExamples.mirrorRoundsWon[1], BOT[simB0], BOT[simB1])}
+                  </div>
+                </>
+              )}
+            </div>
           </div>
         </div>
       )}
@@ -2039,39 +2304,18 @@ return (
         <div className="w-full bg-gray-900 border border-gray-800 rounded-lg p-3 mb-4">
           <h2 className="text-xs text-gray-500 text-center mb-2 uppercase tracking-wider">Rondas ganadas</h2>
           <div className="flex items-center justify-between">
-            <div className="text-center flex-1"><div className="text-lg font-bold" style={{ color: BOT[simB0].color }}>{roundWins[0]}</div><div className="text-xs text-gray-500">{((roundWins[0] / totalR) * 100).toFixed(4)}%</div></div>
+            <div className="text-center flex-1"><div className="text-lg font-bold" style={{ color: BOT[simB0].color }}>{simMetrics0.roundsWon}</div><div className="text-xs text-gray-500">{getPercentOfTotal(simMetrics0.roundsWon, totalR).toFixed(4)}%</div></div>
             <div className="text-center px-3"><div className="text-xs text-gray-600">{totalR} rondas</div></div>
-            <div className="text-center flex-1"><div className="text-lg font-bold" style={{ color: BOT[simB1].color }}>{roundWins[1]}</div><div className="text-xs text-gray-500">{((roundWins[1] / totalR) * 100).toFixed(4)}%</div></div>
-          </div>
-        </div>
-      )}
-
-      {(sweepWins[0] + sweepWins[1] + sweepWins[2]) > 0 && (
-        <div className="w-full bg-gray-900 border border-yellow-900/50 rounded-lg p-3 mb-4">
-          <h2 className="text-xs text-yellow-600 text-center mb-1 uppercase tracking-wider">Doble espejo ganado</h2>
-          <p className="text-xs text-gray-600 text-center mb-3">Gana ambas partidas de la misma simulación espejo</p>
-          <div className="flex items-center justify-between">
-            <div className="text-center flex-1">
-              <div className="text-lg font-bold" style={{ color: BOT[simB0].color }}>{sweepWins[0]}</div>
-              <div className="text-xs text-gray-500">{(sweepWins[0] + sweepWins[1] + sweepWins[2]) > 0 ? ((sweepWins[0] / (sweepWins[0] + sweepWins[1] + sweepWins[2])) * 100).toFixed(4) : "0.0000"}%</div>
-            </div>
-            <div className="text-center px-3">
-              <div className="text-xs text-gray-500">{sweepWins[2]} empates</div>
-              <div className="text-xs text-gray-600">{sweepWins[0] + sweepWins[1] + sweepWins[2]} simulaciones</div>
-            </div>
-            <div className="text-center flex-1">
-              <div className="text-lg font-bold" style={{ color: BOT[simB1].color }}>{sweepWins[1]}</div>
-              <div className="text-xs text-gray-500">{(sweepWins[0] + sweepWins[1] + sweepWins[2]) > 0 ? ((sweepWins[1] / (sweepWins[0] + sweepWins[1] + sweepWins[2])) * 100).toFixed(4) : "0.0000"}%</div>
-            </div>
+            <div className="text-center flex-1"><div className="text-lg font-bold" style={{ color: BOT[simB1].color }}>{simMetrics1.roundsWon}</div><div className="text-xs text-gray-500">{getPercentOfTotal(simMetrics1.roundsWon, totalR).toFixed(4)}%</div></div>
           </div>
         </div>
       )}
 
       {/* Combined charts panel — always visible */}
       {(() => {
-        const winData = winRateHistory.map(d => ({ x: d.simulations, y0: d.rate0, y1: d.rate1 }));
-        const sweepData = sweepRateHistory.map(d => ({ x: d.pairs, y0: d.rate0, y1: d.rate1 }));
-        const activeData = chartTab === "winrate" ? winData : sweepData;
+        const winData = gameRateHistory.map(d => ({ x: d.simulations, y0: d.rate0, y1: d.rate1 }));
+        const mirrorData = mirrorRoundRateHistory.map(d => ({ x: d.mirrorRounds, y0: d.rate0, y1: d.rate1 }));
+        const activeData = chartTab === "winrate" ? winData : mirrorData;
         const sliced = chartZoom ? activeData.slice(-chartZoom) : activeData;
         const ZOOM_OPTS: (number | null)[] = [null, 200, 100, 50, 20];
         return (
@@ -2082,12 +2326,12 @@ return (
                 <button onClick={() => setChartTab("winrate")}
                   aria-pressed={chartTab === "winrate"}
                   className="lab-segmented__button">
-                  Winrate
+                  Partidas
                 </button>
-                <button onClick={() => setChartTab("sweep")}
-                  aria-pressed={chartTab === "sweep"}
+                <button onClick={() => setChartTab("mirror")}
+                  aria-pressed={chartTab === "mirror"}
                   className="lab-segmented__button">
-                  Corridas espejo
+                  Rondas espejo
                 </button>
               </div>
               <div className="lab-chip-row">
@@ -2104,7 +2348,7 @@ return (
             <p className="lab-copy-note text-center mb-2">
               {chartTab === "winrate"
                 ? "Winrate acumulado por simulación espejo. Si los porcentajes truncados dejan de moverse, la muestra ya alcanzó estabilidad."
-                : "% de simulaciones donde cada bot gana ambas partidas espejo (sin empates)"}
+                : "Tasa acumulada de rondas espejo ganadas. Las rondas sin contraparte espejo quedan afuera de esta curva."}
             </p>
             <RateChart data={sliced} bot0={BOT[simB0]} bot1={BOT[simB1]} />
             <div className="flex justify-center gap-4 mt-1.5 text-xs">
@@ -2121,19 +2365,55 @@ return (
         );
       })()}
 
-      {(chinchonWins[0] + chinchonWins[1]) > 0 && (
+      {(simMetrics0.chinchonWins + simMetrics1.chinchonWins) > 0 && (
         <div className="w-full bg-gray-900 border border-gray-800 rounded-lg p-3 mb-4">
           <h2 className="text-xs text-gray-500 text-center mb-2 uppercase tracking-wider">Chinchones</h2>
           <div className="flex items-center justify-between">
             <div className="text-center flex-1">
-              <div className="text-lg font-bold" style={{ color: BOT[simB0].color }}>{chinchonWins[0]}</div>
-              <div className="text-xs text-gray-500">{getChinchonWinRate(chinchonWins[0], gameWins[0]).toFixed(4)}% de sus victorias</div>
+              <div className="text-lg font-bold" style={{ color: BOT[simB0].color }}>{simMetrics0.chinchonWins}</div>
+              <div className="text-xs text-gray-500">{getChinchonWinRate(simMetrics0.chinchonWins, simMetrics0.gamesWon).toFixed(4)}% de sus victorias</div>
+              {simExamplesReady && simExamples.chinchonWins[0] && (
+                <>
+                  <button
+                    onClick={() => openSimExample(simExamples.chinchonWins[0])}
+                    className="mt-2 inline-flex items-center rounded-md border border-gray-700 bg-gray-800 px-2.5 py-1 text-[11px] font-medium text-gray-200 transition-colors hover:border-amber-500 hover:text-white"
+                  >
+                    Ver ejemplo
+                  </button>
+                  <div className="mt-1 text-[11px] text-gray-500">
+                    {formatSimulationExampleSummary(simExamples.chinchonWins[0], BOT[simB0], BOT[simB1])}
+                  </div>
+                </>
+              )}
             </div>
             <div className="text-center px-3 text-xs text-gray-600">🏆 sobre victorias</div>
             <div className="text-center flex-1">
-              <div className="text-lg font-bold" style={{ color: BOT[simB1].color }}>{chinchonWins[1]}</div>
-              <div className="text-xs text-gray-500">{getChinchonWinRate(chinchonWins[1], gameWins[1]).toFixed(4)}% de sus victorias</div>
+              <div className="text-lg font-bold" style={{ color: BOT[simB1].color }}>{simMetrics1.chinchonWins}</div>
+              <div className="text-xs text-gray-500">{getChinchonWinRate(simMetrics1.chinchonWins, simMetrics1.gamesWon).toFixed(4)}% de sus victorias</div>
+              {simExamplesReady && simExamples.chinchonWins[1] && (
+                <>
+                  <button
+                    onClick={() => openSimExample(simExamples.chinchonWins[1])}
+                    className="mt-2 inline-flex items-center rounded-md border border-gray-700 bg-gray-800 px-2.5 py-1 text-[11px] font-medium text-gray-200 transition-colors hover:border-amber-500 hover:text-white"
+                  >
+                    Ver ejemplo
+                  </button>
+                  <div className="mt-1 text-[11px] text-gray-500">
+                    {formatSimulationExampleSummary(simExamples.chinchonWins[1], BOT[simB0], BOT[simB1])}
+                  </div>
+                </>
+              )}
             </div>
+          </div>
+        </div>
+      )}
+
+      {orphanRounds > 0 && (
+        <div className="w-full bg-gray-900 border border-gray-800 rounded-lg p-3 mb-4">
+          <h2 className="text-xs text-gray-500 text-center mb-2 uppercase tracking-wider">Rondas sin espejo</h2>
+          <div className="text-center">
+            <div className="text-lg font-bold text-gray-200">{orphanRounds}</div>
+            <div className="text-xs text-gray-500">Rondas que existieron sólo en una de las dos partidas del par y no cuentan para la métrica espejo.</div>
           </div>
         </div>
       )}
@@ -2143,12 +2423,16 @@ return (
           <h2 className="text-xs text-gray-500 text-center mb-2 uppercase tracking-wider">Duración promedio</h2>
           <div className="flex justify-center gap-6 text-center">
             <div>
-              <div className="text-lg font-bold text-gray-200">{((gameWins[0] + gameWins[1]) > 0 ? totalRounds / (gameWins[0] + gameWins[1]) : 0).toFixed(1)}</div>
+              <div className="text-lg font-bold text-gray-200">{(total > 0 ? totalRounds / total : 0).toFixed(1)}</div>
               <div className="text-xs text-gray-500">rondas / partida</div>
             </div>
             <div>
-              <div className="text-lg font-bold text-gray-200">{(totalRounds > 0 ? (roundWins[0] + roundWins[1]) / totalRounds * 100 : 0).toFixed(0)}%</div>
-              <div className="text-xs text-gray-500">rondas con corte</div>
+              <div className="text-lg font-bold text-gray-200">{(totalRounds > 0 ? getPercentOfTotal(totalMirrorRounds * 2, totalRounds) : 0).toFixed(0)}%</div>
+              <div className="text-xs text-gray-500">rondas con espejo</div>
+            </div>
+            <div>
+              <div className="text-lg font-bold text-gray-200">{(totalRounds > 0 ? getPercentOfTotal(orphanRounds, totalRounds) : 0).toFixed(0)}%</div>
+              <div className="text-xs text-gray-500">rondas sin espejo</div>
             </div>
           </div>
         </div>
@@ -2167,7 +2451,7 @@ return (
             const prompt = generateSimPrompt(
               getBotConfig(simB0, customConfigs),
               getBotConfig(simB1, customConfigs),
-              { gameWins, roundWins, sweepWins, chinchonWins, totalRounds, numSims }
+              { botMetrics: simBotMetrics, splitMirrorRounds, orphanRounds, totalRounds, done: simulationsDone, numSims }
             );
             navigator.clipboard.writeText(prompt);
             setPromptCopied(true);
@@ -2180,7 +2464,7 @@ return (
           const simContext = total > 0 ? generateSimPrompt(
             getBotConfig(simB0, customConfigs),
             getBotConfig(simB1, customConfigs),
-            { gameWins, roundWins, sweepWins, chinchonWins, totalRounds, numSims }
+            { botMetrics: simBotMetrics, splitMirrorRounds, orphanRounds, totalRounds, done: simulationsDone, numSims }
           ) : undefined;
           navigator.clipboard.writeText(generateNewBotPrompt(simContext));
           setNewBotPromptCopied(true);
@@ -2208,7 +2492,7 @@ return (
         subtitle="Marcá dos bots y después generá una repartida espejo para mirar paso a paso."
         labels={["Bot 1", "Bot 2"]}
         values={[mvB0, mvB1]}
-        onChange={(next) => { setMvB0(next[0]); setMvB1(next[1]); setReplayPair(null); }}
+        onChange={(next) => { setMvB0(next[0]); setMvB1(next[1]); setReplayPair(null); setMatchReplaySource(null); }}
       />
       <div className="lab-inline-actions">
         <button onClick={newReplay} className="bg-amber-600 hover:bg-amber-500 text-white px-5 py-1.5 rounded-md text-sm font-semibold active:scale-95">Nueva repartida</button>
@@ -2216,6 +2500,7 @@ return (
       {!replayPair && <div className="w-full text-gray-600 text-sm">Dale a <span className="text-amber-400">Nueva repartida</span></div>}
       {replayPair && replay && step && (
         <div className="w-full">
+          {matchReplaySource && <div className="lab-copy-note text-center mb-3">{matchReplaySource.label}</div>}
           <div className="flex items-center justify-center gap-1 mb-3">
             <div className="flex bg-gray-900 rounded-lg p-0.5">
               <button onClick={() => switchMR("A")} className={`px-2 py-1 rounded-md text-xs font-medium transition-colors ${matchRound === "A" ? "text-white" : "text-gray-500"}`}
@@ -3407,6 +3692,23 @@ return (
       )}
     </div>
     </LabPanel>
+  )}
+
+  {tab === "evo" && (
+    <EvoTab
+      customConfigs={customConfigs}
+      config={evoConfig}
+      running={evoRunning}
+      progress={evoProgress}
+      result={evoResult}
+      savedBotId={evoSavedBotId}
+      onConfigChange={setEvoConfig}
+      onStart={runEvolution}
+      onStop={stopEvolution}
+      onNewEvolution={resetEvolutionForNewRun}
+      onSaveBot={saveEvolvedBot}
+      onSimulate={openSimFromEvo}
+    />
   )}
 </main>
 

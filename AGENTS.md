@@ -32,7 +32,7 @@ Notas importantes:
 
 - La home usa **lazy loading** para todas las tools no-home.
 - Hay **prefetch suave** de rutas desde `Home` y el botón flotante `📚`.
-- `Chinchón Lab` usa **Web Worker** para simulación, torneo y benchmark, evitando bloquear el main thread.
+- `Chinchón Lab` usa **Web Worker** para simulación, torneo, benchmark y evolución genética de bots, y en Evo reparte la evaluación de individuos en subworkers para paralelizar generaciones sin bloquear el main thread.
 - `EvoLab` usa **Web Worker** para simulación de algoritmos genéticos, con el mismo patrón de jobId/cancel/yield.
 
 ---
@@ -83,10 +83,12 @@ npm run test:watch
 - Tool más compleja del repo.
 - Incluye:
   - simulación espejo entre bots,
+  - métricas separadas de partidas, rondas, rondas espejo y rondas sin espejo,
   - torneo por fechas,
   - replay de partidas,
   - modo jugar contra bot,
   - editor/import/export de bots custom,
+  - pestaña `🧬 Evolución` para optimizar bots contra un rival con algoritmos genéticos y criterio de fitness configurable,
   - reglas integradas.
 - Usa lógica pura en `src/lib/` y worker en `src/workers/chinchon-lab.worker.ts`.
 
@@ -194,6 +196,7 @@ Módulos clave actuales:
 - `chinchon-tournament.ts`
 - `chinchon-arena-sim.ts`
 - `chinchon-bot-presets.ts`
+- `chinchon-evo-lab.ts`
 - `chinchon-lab-worker-types.ts`
 - `genetic-lab-worker-types.ts`
 - `genetic-lab/types.ts`
@@ -211,9 +214,13 @@ Módulos clave actuales:
 ### Worker
 
 - `src/workers/chinchon-lab.worker.ts`
-  - corre simulación, torneo y benchmark de bots;
+  - corre simulación, torneo, benchmark y evolución de bots;
+  - coordina la evolución genética y distribuye evaluaciones Evo a subworkers;
   - envía snapshots al main thread;
   - permite cancelación de jobs en progreso.
+- `src/workers/chinchon-evo-eval.worker.ts`
+  - evalúa individuos Evo en paralelo para una generación del lab;
+  - responde al worker coordinador con fitness parcial/final y cancelación cooperativa.
 - `src/workers/genetic-lab.worker.ts`
   - corre generaciones del algoritmo genético para EvoLab;
   - envía snapshots de población y métricas al main thread;
@@ -324,6 +331,7 @@ Reglas de trabajo:
   - `src/lib/chinchon-sim-metrics.ts`
   - `src/lib/chinchon-tournament.ts`
   - `src/pages/ChinchonArena.tsx`
+- Simulación y `🧬 Evolución` comparten la misma definición de `ronda espejo`: solo cuentan índices presentes en ambas partidas del par; las rondas extra quedan como `rondas sin espejo`.
 - Si cambia comportamiento de simulación o torneo, agregar o actualizar tests en `src/lib/`.
 - Si cambia la UX del lab, revisar mobile y desktop; es una pantalla muy densa y fácil de romper visualmente.
 
@@ -373,6 +381,7 @@ Puntos importantes:
 
 - `vite.config.ts` usa base `/ludario/`.
 - GitHub Actions builda con Node 20.
+- En local conviene usar Node 20 (`.nvmrc` + `package.json.engines`) para que `npm test` y `npm run build` coincidan con CI.
 - `deploy.yml` publica `dist/` en Pages.
 - `ci.yml` corre tests + build en pushes y PRs.
 

@@ -22,6 +22,12 @@ function isJobActive(jobId: number) {
   return activeJobId === jobId
 }
 
+function hasReachedGenerationLimit() {
+  return currentSnapshot !== null
+    && currentConfig !== null
+    && currentSnapshot.generation >= currentConfig.maxGenerations
+}
+
 async function yieldToMessages() {
   await new Promise(resolve => setTimeout(resolve, 0))
 }
@@ -55,6 +61,17 @@ function handleStep(request: Extract<GeneticLabWorkerRequest, { type: 'step' }>)
     return
   }
 
+  if (hasReachedGenerationLimit()) {
+    post({
+      type: 'snapshot',
+      jobId: request.jobId,
+      snapshot: currentSnapshot,
+      metrics: computeMetrics(currentSnapshot),
+      done: true,
+    })
+    return
+  }
+
   const result = nextGeneration(currentSnapshot, currentConfig, currentProblem, currentCtx, currentRng)
   currentSnapshot = result.snapshot
   post({ type: 'snapshot', jobId: request.jobId, snapshot: result.snapshot, metrics: result.metrics, done: true })
@@ -67,6 +84,17 @@ async function handleRun(request: Extract<GeneticLabWorkerRequest, { type: 'run'
     return
   }
 
+  if (hasReachedGenerationLimit()) {
+    post({
+      type: 'snapshot',
+      jobId: request.jobId,
+      snapshot: currentSnapshot,
+      metrics: computeMetrics(currentSnapshot),
+      done: true,
+    })
+    return
+  }
+
   const { steps, yieldEvery } = request
   let stepsRun = 0
 
@@ -75,19 +103,20 @@ async function handleRun(request: Extract<GeneticLabWorkerRequest, { type: 'run'
     currentSnapshot = result.snapshot
     stepsRun++
 
-    const isLast = stepsRun >= steps || currentSnapshot.generation >= currentConfig.maxGenerations
-    if (stepsRun % yieldEvery === 0 || isLast) {
+    const reachedGenerationLimit = hasReachedGenerationLimit()
+    const batchFinished = stepsRun >= steps
+    if (stepsRun % yieldEvery === 0 || batchFinished || reachedGenerationLimit) {
       post({
         type: 'snapshot',
         jobId: request.jobId,
         snapshot: result.snapshot,
         metrics: result.metrics,
-        done: isLast,
+        done: reachedGenerationLimit,
       })
       await yieldToMessages()
     }
 
-    if (currentSnapshot.generation >= currentConfig.maxGenerations) break
+    if (reachedGenerationLimit) return
   }
 }
 

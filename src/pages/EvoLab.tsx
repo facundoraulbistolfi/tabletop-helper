@@ -36,6 +36,11 @@ export default function EvoLab() {
   const workerRef = useRef<Worker | null>(null)
   const jobIdRef = useRef(0)
   const runTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const activeRunJobIdRef = useRef<number | null>(null)
+  const runningRef = useRef(false)
+  const tickMsRef = useRef(tickMs)
+  const snapshotRef = useRef<PopulationSnapshot | null>(null)
+  const configRef = useRef(config)
 
   const isMaze = config.problemId === 'maze-runner'
 
@@ -43,6 +48,74 @@ export default function EvoLab() {
   const TABS = isMaze
     ? TABS_BASE
     : TABS_BASE.filter(t => t.value !== 'animation')
+
+  useEffect(() => {
+    runningRef.current = running
+  }, [running])
+
+  useEffect(() => {
+    tickMsRef.current = tickMs
+  }, [tickMs])
+
+  useEffect(() => {
+    snapshotRef.current = snapshot
+  }, [snapshot])
+
+  useEffect(() => {
+    configRef.current = config
+  }, [config])
+
+  const postMessage = useCallback((msg: GeneticLabWorkerRequest) => {
+    workerRef.current?.postMessage(msg)
+  }, [])
+
+  const clearRunTimer = useCallback(() => {
+    if (runTimerRef.current) {
+      clearTimeout(runTimerRef.current)
+      runTimerRef.current = null
+    }
+  }, [])
+
+  const queueRunBatch = useCallback((jobId: number, immediate = false) => {
+    clearRunTimer()
+
+    const dispatchBatch = () => {
+      if (!runningRef.current || activeRunJobIdRef.current !== jobId) return
+
+      const currentSnapshot = snapshotRef.current
+      const currentConfig = configRef.current
+      if (currentSnapshot && currentSnapshot.generation >= currentConfig.maxGenerations) {
+        activeRunJobIdRef.current = null
+        runningRef.current = false
+        setRunning(false)
+        return
+      }
+
+      const yieldEvery = tickMsRef.current === 0 ? 10 : 1
+      const steps = tickMsRef.current === 0 ? 50 : 1
+      postMessage({ type: 'run', jobId, steps, yieldEvery })
+    }
+
+    if (immediate) {
+      dispatchBatch()
+      return
+    }
+
+    const delay = tickMsRef.current === 0 ? 0 : Math.max(tickMsRef.current, 16)
+    runTimerRef.current = setTimeout(dispatchBatch, delay)
+  }, [clearRunTimer, postMessage])
+
+  const cancelActiveRun = useCallback(() => {
+    clearRunTimer()
+    runningRef.current = false
+    setRunning(false)
+
+    const activeRunJobId = activeRunJobIdRef.current
+    activeRunJobIdRef.current = null
+    if (activeRunJobId !== null) {
+      postMessage({ type: 'cancel', jobId: activeRunJobId })
+    }
+  }, [clearRunTimer, postMessage])
 
   useEffect(() => {
     const worker = new Worker(
@@ -53,41 +126,54 @@ export default function EvoLab() {
 
     worker.onmessage = (e: MessageEvent<GeneticLabWorkerMessage>) => {
       const msg = e.data
+      if (msg.jobId !== jobIdRef.current) return
+
       if (msg.type === 'error') {
         console.error('Worker error:', msg.message)
+        clearRunTimer()
+        activeRunJobIdRef.current = null
+        runningRef.current = false
         setRunning(false)
         return
       }
 
       if (msg.type === 'snapshot') {
+        snapshotRef.current = msg.snapshot
         setSnapshot(msg.snapshot)
         setMetricsHistory(prev => {
           const last = prev[prev.length - 1]
           if (last && last.generation === msg.metrics.generation) return prev
           return [...prev, msg.metrics]
         })
-        if (msg.done) {
+
+        if (activeRunJobIdRef.current === msg.jobId) {
+          if (msg.done) {
+            clearRunTimer()
+            activeRunJobIdRef.current = null
+            runningRef.current = false
+            setRunning(false)
+          } else if (runningRef.current) {
+            queueRunBatch(msg.jobId)
+          }
+        } else if (msg.done) {
           setRunning(false)
         }
       }
     }
 
     return () => {
+      clearRunTimer()
       worker.terminate()
-      if (runTimerRef.current) clearTimeout(runTimerRef.current)
     }
-  }, [])
-
-  const postMessage = useCallback((msg: GeneticLabWorkerRequest) => {
-    workerRef.current?.postMessage(msg)
-  }, [])
+  }, [clearRunTimer, queueRunBatch])
 
   const handleInit = useCallback(() => {
+    cancelActiveRun()
+
     const jobId = ++jobIdRef.current
     postMessage({ type: 'initExperiment', jobId, config })
     setMetricsHistory([])
     setSelectedId(null)
-    setRunning(false)
 
     // Build context locally for UI display
     import('../lib/genetic-lab/rng').then(({ createRng }) => {
@@ -102,45 +188,42 @@ export default function EvoLab() {
     })
 
     setTab('evolution')
-  }, [config, postMessage])
+  }, [cancelActiveRun, config, postMessage])
 
   const handleStep = useCallback(() => {
+    cancelActiveRun()
+
     const jobId = ++jobIdRef.current
     postMessage({ type: 'step', jobId })
-  }, [postMessage])
+  }, [cancelActiveRun, postMessage])
 
   const handleRun = useCallback(() => {
+    if (snapshotRef.current && snapshotRef.current.generation >= configRef.current.maxGenerations) {
+      return
+    }
+
+    clearRunTimer()
+    runningRef.current = true
     setRunning(true)
     const jobId = ++jobIdRef.current
-
-    function runBatch() {
-      const yieldEvery = tickMs === 0 ? 10 : 1
-      const steps = tickMs === 0 ? 50 : 1
-      postMessage({ type: 'run', jobId, steps, yieldEvery })
-      runTimerRef.current = setTimeout(runBatch, Math.max(tickMs, 16))
-    }
-
-    runBatch()
-  }, [tickMs, postMessage])
+    activeRunJobIdRef.current = jobId
+    queueRunBatch(jobId, true)
+  }, [clearRunTimer, queueRunBatch])
 
   const handlePause = useCallback(() => {
-    setRunning(false)
-    if (runTimerRef.current) {
-      clearTimeout(runTimerRef.current)
-      runTimerRef.current = null
-    }
-    postMessage({ type: 'cancel', jobId: jobIdRef.current })
-  }, [postMessage])
+    cancelActiveRun()
+  }, [cancelActiveRun])
 
   const handleReset = useCallback(() => {
-    handlePause()
+    cancelActiveRun()
+    snapshotRef.current = null
     setSnapshot(null)
     setMetricsHistory([])
     setSelectedId(null)
     setTarget(null)
     setMazeCtx(null)
     setTab('experiment')
-  }, [handlePause])
+  }, [cancelActiveRun])
 
   const bestId = snapshot
     ? snapshot.individuals.reduce((best, ind) => (ind.fitness > best.fitness ? ind : best), snapshot.individuals[0]).id

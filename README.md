@@ -23,7 +23,7 @@ Scoreboard completo para el juego de cartas Chinchón. Configura de 2 a 6 jugado
 Marcador de truco en palitos con soporte de buenas/malas, pensado para partidas rápidas entre “nosotros” y “ellos”.
 
 ### Chinchón Lab
-Arena de estrategias para Chinchón con bots, simulaciones y replay de manos. Permite comparar comportamientos entre bots, correr partidas espejo y jugar contra una IA en modo interactivo.
+Arena de estrategias para Chinchón con bots, simulaciones y replay de manos. Permite comparar comportamientos entre bots con métricas separadas de partidas, rondas, rondas espejo y rondas sin espejo, jugar contra una IA en modo interactivo y evolucionar bots con una pestaña `🧬 Evolución` que usa algoritmos genéticos con criterio de fitness configurable dentro del mismo lab.
 
 ### EvoLab
 Laboratorio interactivo de algoritmos genéticos. Configura población, selección (torneo/ruleta), cruce y mutación, y observá cómo una población evoluciona generación a generación para acercarse a un patrón objetivo. Incluye curvas de fitness, inspector de individuo y presets didácticos.
@@ -79,9 +79,12 @@ Portal externo invitado dentro de la home. Abre [Toca Toca](https://facundoraulb
 
 ## Desarrollo local
 
+Node recomendado: **20.x** (el repo incluye `.nvmrc` y `package.json.engines` para alinear local con CI/GitHub Actions).
+
 ```bash
 git clone https://github.com/facundoraulbistolfi/ludario.git
 cd ludario
+nvm use
 npm install
 npm run dev        # abre en http://localhost:5173/ludario/
 ```
