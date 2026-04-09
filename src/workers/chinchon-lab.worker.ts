@@ -23,7 +23,12 @@ import {
 import { createRng } from '../lib/genetic-lab/rng'
 import { createRuntimeBots, simulateGamePairWithBots } from '../lib/chinchon-arena-sim'
 import { buildBotFromConfig, getBotConfig, type BotConfig } from '../lib/chinchon-bot-presets'
-import { getFitnessModeDescriptor, runEvolution, type FitnessEvaluation } from '../lib/chinchon-evo-lab'
+import {
+  getFitnessModeDescriptor,
+  runEvolution,
+  type EvolutionProgressSnapshot,
+  type FitnessEvaluation,
+} from '../lib/chinchon-evo-lab'
 import type {
   BenchmarkProgressMessage,
   EvoDoneMessage,
@@ -81,6 +86,7 @@ type EvoEvalPoolTask = {
   taskId: number
   jobId: number
   individual: BotConfig
+  rivalConfig: BotConfig
   sims: number
   onProgress?: (evaluation: FitnessEvaluation & { progress: number; stableStop: boolean }) => void
   resolve: (evaluation: FitnessEvaluation) => void
@@ -91,6 +97,7 @@ type EvoEvalPool = {
   size: number
   evaluate: (
     individual: BotConfig,
+    rivalConfig: BotConfig,
     sims: number,
     onProgress?: (evaluation: FitnessEvaluation & { progress: number; stableStop: boolean }) => void,
   ) => Promise<FitnessEvaluation>
@@ -131,7 +138,6 @@ function getEvoEvaluationParallelism(populationSize: number) {
 
 function createEvoEvalPool(
   jobId: number,
-  rivalConfig: BotConfig,
   fitnessMode: Extract<LabWorkerRequest, { type: 'runEvolution' }>['fitnessMode'],
   useStabilizedEvaluation: boolean,
   stabilizeDecimals: number,
@@ -164,7 +170,7 @@ function createEvoEvalPool(
         jobId: task.jobId,
         taskId: task.taskId,
         individual: task.individual,
-        rivalConfig,
+        rivalConfig: task.rivalConfig,
         sims: task.sims,
         fitnessMode,
         useStabilizedEvaluation,
@@ -210,7 +216,7 @@ function createEvoEvalPool(
 
   return {
     size: workers.length,
-    evaluate(individual, sims, onProgress) {
+    evaluate(individual, rivalConfig, sims, onProgress) {
       return new Promise<FitnessEvaluation>((resolve, reject) => {
         if (disposed) {
           resolve(createCancelledEvaluation())
@@ -221,6 +227,7 @@ function createEvoEvalPool(
           taskId: nextTaskId,
           jobId,
           individual,
+          rivalConfig,
           sims,
           onProgress,
           resolve,
@@ -561,6 +568,7 @@ async function runEvolutionJob(request: Extract<LabWorkerRequest, { type: 'runEv
   const rivalConfig = getBotConfig(request.rivalBotIndex, request.customConfigs)
   const seedConfig = getBotConfig(request.seedBotIndex, request.customConfigs)
   const rivalRuntime = buildBotFromConfig(rivalConfig)
+  const originalRuntime = buildBotFromConfig(seedConfig)
   const rng = createRng(request.jobId + Date.now())
   const evaluationConcurrency = getEvoEvaluationParallelism(request.populationSize)
   const fitnessDescriptor = getFitnessModeDescriptor(request.fitnessMode)
@@ -568,7 +576,6 @@ async function runEvolutionJob(request: Extract<LabWorkerRequest, { type: 'runEv
   activeEvoEvalPool?.dispose()
   const evalPool = createEvoEvalPool(
     request.jobId,
-    rivalConfig,
     request.fitnessMode,
     request.useStabilizedEvaluation,
     request.stabilizeDecimals,
@@ -576,10 +583,11 @@ async function runEvolutionJob(request: Extract<LabWorkerRequest, { type: 'runEv
   )
   activeEvoEvalPool = evalPool
 
-  function buildEvoProgressMessage(snapshot: Parameters<NonNullable<Parameters<typeof runEvolution>[0]['onGeneration']>>[0]): EvoProgressMessage {
+  function buildEvoProgressMessage(snapshot: EvolutionProgressSnapshot): EvoProgressMessage {
     return {
       type: 'evoProgress',
       jobId: request.jobId,
+      phase: snapshot.phase,
       fitnessMode: request.fitnessMode,
       primaryLabel: fitnessDescriptor.primaryLabel,
       secondaryLabel: fitnessDescriptor.secondaryLabel,
@@ -621,6 +629,7 @@ async function runEvolutionJob(request: Extract<LabWorkerRequest, { type: 'runEv
     const result = await runEvolution({
       seedConfig,
       rivalRuntime,
+      originalRuntime,
       config: {
         populationSize: request.populationSize,
         simsPerEval: request.simsPerEval,
@@ -643,8 +652,10 @@ async function runEvolutionJob(request: Extract<LabWorkerRequest, { type: 'runEv
       excludeExactReferenceConfig: request.rivalBotIndex === request.seedBotIndex ? seedConfig : null,
       shouldCancel: () => !isJobActive(request.jobId),
       yieldControl: yieldToMessages,
-      evaluate: async (individual, _rival, _sims, _fitnessMode, options) =>
-        evalPool.evaluate(individual, request.simsPerEval, options?.onPartial),
+      evaluate: async (individual, targetRuntime, _sims, _fitnessMode, options) => {
+        const targetConfig = targetRuntime.id === seedConfig.id ? seedConfig : rivalConfig
+        return evalPool.evaluate(individual, targetConfig, request.simsPerEval, options?.onPartial)
+      },
       onProgress: async snapshot => {
         post(buildEvoProgressMessage(snapshot))
       },
@@ -703,6 +714,7 @@ async function runEvolutionJob(request: Extract<LabWorkerRequest, { type: 'runEv
         secondaryRate: individual.secondaryRate,
       })),
       fitnessHistory: result.fitnessHistory,
+      generationHistory: result.generationHistory,
     }
     post(doneMessage)
   } finally {

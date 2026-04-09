@@ -491,4 +491,117 @@ describe('runEvolution', () => {
 
     expect(getChangedGeneRows(seed, result.bestIndividual.config).length).toBeGreaterThan(0)
   })
+
+  it('keeps a generation-by-generation history with lineage and metrics vs the original seed', async () => {
+    const seed = makeSeedConfig()
+    const rival = makeAggressiveConfig()
+    const rng = createRng(61)
+
+    const result = await runEvolution({
+      seedConfig: seed,
+      rivalRuntime: buildBotFromConfig(rival),
+      config: {
+        populationSize: 5,
+        simsPerEval: 10,
+        useStabilizedEvaluation: false,
+        stabilizeDecimals: 1,
+        maxGenerations: 1,
+        elitismCount: 1,
+        mutationRate: 0.2,
+        mutationSigma: 1.2,
+        crossoverRate: 0.8,
+        fitnessMode: 'games_then_mirror_rounds',
+        selectionMethod: 'tournament',
+        tournamentK: 3,
+        absoluteMargin: null,
+        targetRate: null,
+        stagnationLimit: null,
+      },
+      rng: () => rng.next(),
+      evaluate: async (_individual, rivalRuntime) => {
+        const vsSeed = rivalRuntime.id === seed.id
+        const metrics = {
+          gamesPlayed: 20,
+          gamesWon: vsSeed ? 9 : 13,
+          roundsPlayed: 120,
+          roundsWon: vsSeed ? 54 : 66,
+          mirrorRoundsPlayed: 40,
+          mirrorRoundsWon: vsSeed ? 18 : 24,
+          chinchonWins: vsSeed ? 1 : 3,
+          orphanRoundsPlayed: 4,
+        }
+        return {
+          ...metrics,
+          ...buildFitnessSummary('games_then_mirror_rounds', metrics),
+        }
+      },
+    })
+
+    expect(result.generationHistory).toHaveLength(2)
+    expect(result.generationHistory[0]?.generation).toBe(0)
+    expect(result.generationHistory[1]?.generation).toBe(1)
+
+    const initialSeed = result.generationHistory[0]?.individuals[0]
+    expect(initialSeed?.sourceKind).toBe('seed')
+    expect(initialSeed?.originalMetrics?.gameWinRate).toBe(45)
+    expect(initialSeed?.originalMetrics?.mirrorRoundRate).toBe(45)
+
+    const secondGeneration = result.generationHistory[1]?.individuals ?? []
+    expect(secondGeneration.some(individual => individual.sourceKind === 'elite')).toBe(true)
+    expect(secondGeneration.some(individual => individual.sourceKind === 'crossover')).toBe(true)
+    expect(secondGeneration.every(individual => individual.originalMetrics != null)).toBe(true)
+  })
+
+  it('marks progress and generation-complete snapshots explicitly', async () => {
+    const phases: string[] = []
+    const rng = createRng(67)
+
+    await runEvolution({
+      seedConfig: makeSeedConfig(),
+      rivalRuntime: buildBotFromConfig(makeAggressiveConfig()),
+      config: {
+        populationSize: 4,
+        simsPerEval: 10,
+        useStabilizedEvaluation: false,
+        stabilizeDecimals: 1,
+        maxGenerations: 1,
+        elitismCount: 1,
+        mutationRate: 0.2,
+        mutationSigma: 1.2,
+        crossoverRate: 0.8,
+        fitnessMode: 'games_then_mirror_rounds',
+        selectionMethod: 'tournament',
+        tournamentK: 3,
+        absoluteMargin: null,
+        targetRate: null,
+        stagnationLimit: null,
+      },
+      rng: () => rng.next(),
+      evaluate: async individual => {
+        const metrics = {
+          gamesPlayed: 20,
+          gamesWon: 10 + individual.cut.baseResto,
+          roundsPlayed: 120,
+          roundsWon: 60,
+          mirrorRoundsPlayed: 40,
+          mirrorRoundsWon: 18 + individual.cut.baseResto,
+          chinchonWins: 1,
+          orphanRoundsPlayed: 4,
+        }
+        return {
+          ...metrics,
+          ...buildFitnessSummary('games_then_mirror_rounds', metrics),
+        }
+      },
+      onProgress: async snapshot => {
+        phases.push(snapshot.phase)
+      },
+      onGeneration: async snapshot => {
+        phases.push(snapshot.phase)
+      },
+    })
+
+    expect(phases).toContain('progress')
+    expect(phases.filter(phase => phase === 'generation_complete').length).toBe(2)
+  })
 })

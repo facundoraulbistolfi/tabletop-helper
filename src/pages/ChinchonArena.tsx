@@ -1712,6 +1712,17 @@ useEffect(() => {
       if (data.type === "evoProgress") {
         setEvoRunning(true);
         setEvoProgress(data);
+        if (data.phase === "generation_complete") {
+          setEvoGenerationHistory(prev => {
+            const next = prev.filter(record => record.generation !== data.generation);
+            next.push({
+              generation: data.generation,
+              individuals: data.generationIndividuals,
+            });
+            next.sort((left, right) => left.generation - right.generation);
+            return next;
+          });
+        }
         return;
       }
 
@@ -1719,6 +1730,7 @@ useEffect(() => {
         setEvoRunning(false);
         setEvoResult(data);
         setEvoProgress(null);
+        setEvoGenerationHistory(data.generationHistory ?? []);
       }
     });
   };
@@ -1792,6 +1804,7 @@ const [evoConfig, setEvoConfig] = useState(() => ({ ...defaultEvoConfig }));
 const [evoRunning, setEvoRunning] = useState(false);
 const [evoProgress, setEvoProgress] = useState(null);
 const [evoResult, setEvoResult] = useState(null);
+const [evoGenerationHistory, setEvoGenerationHistory] = useState([]);
 const [evoSavedBotId, setEvoSavedBotId] = useState<string | null>(null);
 
 const resetTournamentState = useCallback(() => {
@@ -1813,6 +1826,7 @@ const resetEvoState = useCallback((options?: { preserveConfig?: boolean }) => {
   setBenchmarking(null);
   setEvoProgress(null);
   setEvoResult(null);
+  setEvoGenerationHistory([]);
   setEvoSavedBotId(null);
   if (!options?.preserveConfig) {
     setEvoConfig({ ...defaultEvoConfig });
@@ -1912,6 +1926,7 @@ const runEvolution = useCallback(() => {
   setEvoRunning(true);
   setEvoProgress(null);
   setEvoResult(null);
+  setEvoGenerationHistory([]);
   setEvoSavedBotId(null);
   workerRef.current?.postMessage({
     type: "runEvolution",
@@ -2016,6 +2031,7 @@ const resetEvolutionForNewRun = useCallback(() => {
   setEvoRunning(false);
   setEvoProgress(null);
   setEvoResult(null);
+  setEvoGenerationHistory([]);
   setEvoSavedBotId(null);
 }, []);
 
@@ -3701,6 +3717,7 @@ return (
       running={evoRunning}
       progress={evoProgress}
       result={evoResult}
+      generationHistory={evoGenerationHistory}
       savedBotId={evoSavedBotId}
       onConfigChange={setEvoConfig}
       onStart={runEvolution}

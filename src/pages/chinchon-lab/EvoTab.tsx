@@ -14,6 +14,7 @@ import {
   defaultEvoConfig,
   getFitnessModeDescriptor,
   type EvoConfig,
+  type EvolutionGenerationRecord,
   type FitnessMode,
 } from '../../lib/chinchon-evo-lab'
 import type {
@@ -25,6 +26,7 @@ import { LabAccordionSection, LabPanel, StickyActionBar } from './Layout'
 import EvoResultView from './EvoResultView'
 import EvoSaveModal, { type EvoSaveOutcome } from './EvoSaveModal'
 import EvoFitnessChart from './EvoFitnessChart'
+import EvoGenerationArchive from './EvoGenerationArchive'
 import EvoGenerationGrid from './EvoGenerationGrid'
 
 const COUNT_FORMATTER = new Intl.NumberFormat('es-AR')
@@ -43,6 +45,7 @@ type Props = {
   running: boolean
   progress: EvoProgressMessage | null
   result: EvoDoneMessage | null
+  generationHistory: EvolutionGenerationRecord[]
   savedBotId: string | null
   onConfigChange: (config: EvoConfig) => void
   onStart: () => void
@@ -172,6 +175,7 @@ export default function EvoTab({
   running,
   progress,
   result,
+  generationHistory,
   savedBotId,
   onConfigChange,
   onStart,
@@ -316,6 +320,15 @@ export default function EvoTab({
               individuals={deferredGenerationIndividuals}
               primaryLabel={progress?.primaryLabel ?? progressDescriptor.primaryLabel}
               secondaryLabel={progress?.secondaryLabel ?? progressDescriptor.secondaryLabel}
+            />
+
+            <EvoGenerationArchive
+              history={generationHistory}
+              primaryLabel={progress?.primaryLabel ?? progressDescriptor.primaryLabel}
+              secondaryLabel={progress?.secondaryLabel ?? progressDescriptor.secondaryLabel}
+              eyebrow="Archivo parcial"
+              title="Generaciones ya cerradas"
+              description="Mientras la evolución sigue corriendo, acá quedan las generaciones que ya se completaron."
             />
 
             <StickyActionBar>

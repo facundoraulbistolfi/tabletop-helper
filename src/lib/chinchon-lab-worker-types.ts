@@ -4,6 +4,7 @@ import type {
   EvoMetricSummary,
   EvoMetricsTick,
   EvolutionCandidateProgress,
+  EvolutionGenerationRecord,
   FitnessMode,
   StopReason,
 } from './chinchon-evo-lab'
@@ -107,6 +108,7 @@ export type TournamentProgressMessage = {
 export type EvoProgressMessage = {
   type: 'evoProgress'
   jobId: number
+  phase: 'progress' | 'generation_complete'
   fitnessMode: FitnessMode
   primaryLabel: string
   secondaryLabel: string | null
@@ -146,6 +148,7 @@ export type EvoDoneMessage = {
   topFitnesses: number[]
   topMetrics: EvoMetricSummary[]
   fitnessHistory: EvoMetricsTick[]
+  generationHistory: EvolutionGenerationRecord[]
 }
 
 export type LabWorkerMessage =

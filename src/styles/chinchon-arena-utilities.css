@@ -2368,6 +2368,15 @@
   font-size:.95rem;
   line-height:1.3;
 }
+.evo-candidate-card__meta{
+  display:flex;
+  flex-wrap:wrap;
+  gap:.35rem .7rem;
+  margin-top:.32rem;
+  color:#94a3b8;
+  font-size:.72rem;
+  line-height:1.45;
+}
 .evo-candidate-card__status{
   padding:.22rem .5rem;
   border-radius:999px;
@@ -2397,10 +2406,72 @@
   color:#cbd5e1;
   font-size:.78rem;
 }
+.evo-candidate-card__panel{
+  display:grid;
+  gap:.45rem;
+  padding:.7rem .75rem;
+  border:1px solid rgba(71,85,105,.58);
+  border-radius:.9rem;
+  background:rgba(15,23,42,.62);
+}
+.evo-candidate-card__panel.is-muted{
+  background:rgba(30,41,59,.4);
+}
+.evo-candidate-card__panel-title{
+  color:#f8fafc;
+  font-size:.78rem;
+  font-weight:700;
+  letter-spacing:.04em;
+  text-transform:uppercase;
+}
+.evo-candidate-card__stats{
+  display:grid;
+  gap:.28rem;
+  color:#cbd5e1;
+  font-size:.76rem;
+  line-height:1.45;
+}
+.evo-candidate-card__meta-block{
+  display:grid;
+  gap:.25rem;
+  padding:.72rem .75rem;
+  border-radius:.9rem;
+  background:rgba(2,6,23,.38);
+}
+.evo-candidate-card__meta-block strong{
+  color:#f8fafc;
+  font-size:.78rem;
+}
+.evo-candidate-card__meta-block span{
+  color:#cbd5e1;
+  font-size:.75rem;
+  line-height:1.45;
+}
 .evo-candidate-card__hint{
   color:#94a3b8;
   font-size:.72rem;
   line-height:1.5;
+}
+
+.evo-archive-toolbar{
+  display:flex;
+  align-items:flex-end;
+  justify-content:space-between;
+  gap:1rem;
+  padding:.85rem .95rem;
+  border:1px solid rgba(71,85,105,.68);
+  border-radius:1rem;
+  background:rgba(15,23,42,.62);
+}
+.evo-archive-toolbar__field{
+  min-width:min(16rem, 100%);
+}
+.evo-archive-toolbar__meta{
+  display:grid;
+  gap:.2rem;
+  color:#cbd5e1;
+  font-size:.78rem;
+  line-height:1.45;
 }
 
 .evo-chart{
@@ -2604,6 +2675,10 @@
   }
   .evo-candidate-card__top{
     flex-direction:column;
+  }
+  .evo-archive-toolbar{
+    flex-direction:column;
+    align-items:stretch;
   }
   .evo-actions{
     flex-direction:column;

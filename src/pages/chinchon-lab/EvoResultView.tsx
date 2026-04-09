@@ -2,6 +2,7 @@ import { buildBotFromConfig, type BotConfig } from '../../lib/chinchon-bot-prese
 import { explainGeneChange, getChangedGeneRows, type StopReason } from '../../lib/chinchon-evo-lab'
 import type { EvoDoneMessage } from '../../lib/chinchon-lab-worker-types'
 
+import EvoGenerationArchive from './EvoGenerationArchive'
 import EvoFitnessChart from './EvoFitnessChart'
 
 type Props = {
@@ -178,6 +179,15 @@ export default function EvoResultView({
           })}
         </div>
       </section>
+
+      <EvoGenerationArchive
+        history={result.generationHistory}
+        primaryLabel={result.primaryLabel}
+        secondaryLabel={result.secondaryLabel}
+        eyebrow="Archivo"
+        title="Todas las generaciones"
+        description="Cada generación queda disponible con sus individuos, estadísticas y linaje completo."
+      />
 
       <div className="evo-actions">
         <button type="button" className="evo-primary-button" onClick={onOpenSave}>

@@ -52,12 +52,20 @@ export type EvoMetricSummary = BotMirrorMetrics & {
   secondaryRate: number
 }
 
+export type EvolutionSourceKind =
+  | 'seed'
+  | 'initial_mutation'
+  | 'elite'
+  | 'crossover'
+
 export type EvoIndividual = EvoMetricSummary & {
   id: number
   config: BotConfig
   fitness: number
   fitnessMode: FitnessMode
+  originalMetrics?: EvoMetricSummary
   meta?: {
+    sourceKind?: EvolutionSourceKind
     parentAId?: number
     parentBId?: number
     mutatedGenes?: string[]
@@ -65,6 +73,8 @@ export type EvoIndividual = EvoMetricSummary & {
 }
 
 export type EvolutionCandidateProgress = {
+  id: number | null
+  generation: number
   slotIndex: number
   name: string
   emoji: string
@@ -72,11 +82,25 @@ export type EvolutionCandidateProgress = {
   progress: number
   gamesPlayed: number
   gamesWon: number
+  roundsPlayed: number
+  roundsWon: number
   mirrorRoundsPlayed: number
   mirrorRoundsWon: number
+  chinchonWins: number
+  orphanRoundsPlayed: number
   primaryRate: number
   secondaryRate: number
   stableStop: boolean
+  originalMetrics: EvoMetricSummary | null
+  sourceKind: EvolutionSourceKind
+  parentAId?: number
+  parentBId?: number
+  mutatedGenes: string[]
+}
+
+export type EvolutionGenerationRecord = {
+  generation: number
+  individuals: EvolutionCandidateProgress[]
 }
 
 export type EvoMetricsTick = {
@@ -132,6 +156,7 @@ export type FitnessEvaluation = EvoMetricSummary & {
 }
 
 export type EvolutionProgressSnapshot = {
+  phase: 'progress' | 'generation_complete'
   generation: number
   bestIndividual: EvoIndividual
   bestGeneration: number
@@ -153,6 +178,7 @@ export type EvolutionRunResult = {
   stopReason: StopReason
   topIndividuals: EvoIndividual[]
   fitnessHistory: EvoMetricsTick[]
+  generationHistory: EvolutionGenerationRecord[]
 }
 
 export type EvaluateFitnessOptions = {
@@ -171,6 +197,7 @@ export type EvaluateFitnessOptions = {
 export type RunEvolutionOptions = {
   seedConfig: BotConfig
   rivalRuntime: BotRuntime
+  originalRuntime?: BotRuntime | null
   config: EvolutionRunConfig
   rng: () => number
   evaluationConcurrency?: number
@@ -484,6 +511,29 @@ function combineMetricSummary(mode: FitnessMode, metrics: BotMirrorMetrics): Evo
   }
 }
 
+function cloneMetricSummary<T extends EvoMetricSummary | undefined | null>(summary: T): T {
+  if (!summary) return summary
+  return { ...summary } as T
+}
+
+function pickMetricSummary(summary: EvoMetricSummary): EvoMetricSummary {
+  return {
+    gamesPlayed: summary.gamesPlayed,
+    gamesWon: summary.gamesWon,
+    roundsPlayed: summary.roundsPlayed,
+    roundsWon: summary.roundsWon,
+    mirrorRoundsPlayed: summary.mirrorRoundsPlayed,
+    mirrorRoundsWon: summary.mirrorRoundsWon,
+    chinchonWins: summary.chinchonWins,
+    orphanRoundsPlayed: summary.orphanRoundsPlayed,
+    gameWinRate: summary.gameWinRate,
+    roundWinRate: summary.roundWinRate,
+    mirrorRoundRate: summary.mirrorRoundRate,
+    primaryRate: summary.primaryRate,
+    secondaryRate: summary.secondaryRate,
+  }
+}
+
 function createFallbackIndividual(config: BotConfig, fitnessMode: FitnessMode = defaultEvoConfig.fitnessMode): EvoIndividual {
   return {
     id: 0,
@@ -498,19 +548,28 @@ function cloneIndividual(individual: EvoIndividual): EvoIndividual {
   return {
     ...individual,
     config: cloneBotConfig(individual.config),
+    originalMetrics: cloneMetricSummary(individual.originalMetrics),
     meta: individual.meta ? { ...individual.meta, mutatedGenes: individual.meta.mutatedGenes?.slice() } : undefined,
   }
 }
 
 function cloneGenerationCandidate(progress: EvolutionCandidateProgress): EvolutionCandidateProgress {
-  return { ...progress }
+  return {
+    ...progress,
+    originalMetrics: cloneMetricSummary(progress.originalMetrics),
+    mutatedGenes: progress.mutatedGenes.slice(),
+  }
 }
 
 function createGenerationCandidateProgress(
   config: BotConfig,
   slotIndex: number,
+  generation: number,
+  meta?: EvoIndividual['meta'],
 ): EvolutionCandidateProgress {
   return {
+    id: null,
+    generation,
     slotIndex,
     name: config.name,
     emoji: config.emoji,
@@ -518,11 +577,52 @@ function createGenerationCandidateProgress(
     progress: 0,
     gamesPlayed: 0,
     gamesWon: 0,
+    roundsPlayed: 0,
+    roundsWon: 0,
     mirrorRoundsPlayed: 0,
     mirrorRoundsWon: 0,
+    chinchonWins: 0,
+    orphanRoundsPlayed: 0,
     primaryRate: 0,
     secondaryRate: 0,
     stableStop: false,
+    originalMetrics: null,
+    sourceKind: meta?.sourceKind ?? 'initial_mutation',
+    parentAId: meta?.parentAId,
+    parentBId: meta?.parentBId,
+    mutatedGenes: meta?.mutatedGenes?.slice() ?? [],
+  }
+}
+
+function buildGenerationCandidateFromIndividual(
+  individual: EvoIndividual,
+  slotIndex: number,
+  generation: number,
+): EvolutionCandidateProgress {
+  return {
+    id: individual.id,
+    generation,
+    slotIndex,
+    name: individual.config.name,
+    emoji: individual.config.emoji,
+    status: 'done',
+    progress: 100,
+    gamesPlayed: individual.gamesPlayed,
+    gamesWon: individual.gamesWon,
+    roundsPlayed: individual.roundsPlayed,
+    roundsWon: individual.roundsWon,
+    mirrorRoundsPlayed: individual.mirrorRoundsPlayed,
+    mirrorRoundsWon: individual.mirrorRoundsWon,
+    chinchonWins: individual.chinchonWins,
+    orphanRoundsPlayed: individual.orphanRoundsPlayed,
+    primaryRate: individual.primaryRate,
+    secondaryRate: individual.secondaryRate,
+    stableStop: false,
+    originalMetrics: cloneMetricSummary(individual.originalMetrics) ?? null,
+    sourceKind: individual.meta?.sourceKind ?? (generation === 0 ? 'seed' : 'elite'),
+    parentAId: individual.meta?.parentAId,
+    parentBId: individual.meta?.parentBId,
+    mutatedGenes: individual.meta?.mutatedGenes?.slice() ?? [],
   }
 }
 
@@ -1207,7 +1307,9 @@ export function explainGeneChange(path: string, before: GeneValue, after: GeneVa
 async function evaluatePopulation(
   drafts: DraftIndividual[],
   startId: number,
+  generation: number,
   rivalRuntime: BotRuntime,
+  originalRuntime: BotRuntime | null,
   simsPerEval: number,
   fitnessMode: FitnessMode,
   evaluate: NonNullable<RunEvolutionOptions['evaluate']>,
@@ -1222,7 +1324,7 @@ async function evaluatePopulation(
   }))
   const individuals: Array<EvoIndividual | undefined> = new Array(drafts.length)
   const generationIndividuals = normalizedDrafts.map((draft, index) =>
-    createGenerationCandidateProgress(draft.config, index),
+    createGenerationCandidateProgress(draft.config, index, generation, draft.meta),
   )
   let totalGames = 0
   let evaluatedIndividuals = 0
@@ -1264,14 +1366,18 @@ async function evaluatePopulation(
       const evaluation = await evaluate(normalizedConfig, rivalRuntime, simsPerEval, fitnessMode, {
         ...options,
         onPartial: partial => {
-          generationIndividuals[currentIndex] = {
-            ...generationIndividuals[currentIndex],
-            status: partial.progress >= 100 ? 'done' : 'running',
-            progress: partial.progress,
+      generationIndividuals[currentIndex] = {
+        ...generationIndividuals[currentIndex],
+        status: partial.progress >= 100 ? 'done' : 'running',
+        progress: partial.progress,
             gamesPlayed: partial.gamesPlayed,
             gamesWon: partial.gamesWon,
+            roundsPlayed: partial.roundsPlayed,
+            roundsWon: partial.roundsWon,
             mirrorRoundsPlayed: partial.mirrorRoundsPlayed,
             mirrorRoundsWon: partial.mirrorRoundsWon,
+            chinchonWins: partial.chinchonWins,
+            orphanRoundsPlayed: partial.orphanRoundsPlayed,
             primaryRate: partial.primaryRate,
             secondaryRate: partial.secondaryRate,
             stableStop: partial.stableStop,
@@ -1289,6 +1395,21 @@ async function evaluatePopulation(
       if (evaluation.cancelled) {
         cancelled = true
         return
+      }
+
+      let originalMetrics: EvoMetricSummary | undefined
+      if (originalRuntime && originalRuntime.id !== rivalRuntime.id) {
+        const originalEvaluation = await evaluate(normalizedConfig, originalRuntime, simsPerEval, fitnessMode, {
+          ...options,
+          onPartial: undefined,
+        })
+        if (originalEvaluation.cancelled) {
+          cancelled = true
+          return
+        }
+        originalMetrics = pickMetricSummary(originalEvaluation)
+      } else {
+        originalMetrics = pickMetricSummary(evaluation)
       }
 
       individuals[currentIndex] = {
@@ -1309,19 +1430,26 @@ async function evaluatePopulation(
         mirrorRoundRate: evaluation.mirrorRoundRate,
         primaryRate: evaluation.primaryRate,
         secondaryRate: evaluation.secondaryRate,
+        originalMetrics,
         meta: normalizedDrafts[currentIndex].meta,
       }
       generationIndividuals[currentIndex] = {
         ...generationIndividuals[currentIndex],
+        id: startId + currentIndex,
         status: 'done',
         progress: 100,
         gamesPlayed: evaluation.gamesPlayed,
         gamesWon: evaluation.gamesWon,
+        roundsPlayed: evaluation.roundsPlayed,
+        roundsWon: evaluation.roundsWon,
         mirrorRoundsPlayed: evaluation.mirrorRoundsPlayed,
         mirrorRoundsWon: evaluation.mirrorRoundsWon,
+        chinchonWins: evaluation.chinchonWins,
+        orphanRoundsPlayed: evaluation.orphanRoundsPlayed,
         primaryRate: evaluation.primaryRate,
         secondaryRate: evaluation.secondaryRate,
         stableStop: Boolean(evaluation.stableStop),
+        originalMetrics: cloneMetricSummary(originalMetrics) ?? null,
       }
       evaluatedIndividuals += 1
       await options.onEvaluated?.({
@@ -1355,6 +1483,11 @@ function buildNextGenerationDrafts(
     .slice(0, Math.min(config.elitismCount, population.length))
     .map((individual, index) => ({
       config: applyEvolutionIdentity(cloneBotConfig(individual.config), seedConfig, generation, index),
+      meta: {
+        sourceKind: 'elite',
+        parentAId: individual.id,
+        mutatedGenes: [],
+      },
     }))
 
   while (nextDrafts.length < config.populationSize) {
@@ -1380,6 +1513,7 @@ function buildNextGenerationDrafts(
         nextDrafts.length,
       ),
       meta: {
+        sourceKind: 'crossover',
         parentAId: parentA.id,
         parentBId: parentB.id,
         mutatedGenes: mutatedA.mutatedGenes,
@@ -1395,6 +1529,7 @@ function buildNextGenerationDrafts(
           nextDrafts.length,
         ),
         meta: {
+          sourceKind: 'crossover',
           parentAId: parentA.id,
           parentBId: parentB.id,
           mutatedGenes: mutatedB.mutatedGenes,
@@ -1409,6 +1544,7 @@ function buildNextGenerationDrafts(
 export async function runEvolution({
   seedConfig,
   rivalRuntime,
+  originalRuntime = buildBotFromConfig(seedConfig),
   config,
   rng,
   evaluationConcurrency = 1,
@@ -1437,6 +1573,7 @@ export async function runEvolution({
   let bestGeneration = 0
   let stagnationCount = 0
   const history: EvoMetricsTick[] = []
+  const generationHistory: EvolutionGenerationRecord[] = []
   const hallOfFame = new Map<string, EvoIndividual>()
   const referenceConfig = excludeExactReferenceConfig ? normalizeBotConfig(excludeExactReferenceConfig) : null
 
@@ -1458,12 +1595,27 @@ export async function runEvolution({
       includeSeed: referenceConfig ? false : true,
       referenceConfig,
     },
-  ).map(configItem => ({ config: configItem }))
+  ).map((configItem, index): DraftIndividual => {
+    const isSeed =
+      !referenceConfig
+      && index === 0
+      && configsAreEquivalent(configItem, normalizeBotConfig(seedConfig))
+
+    return {
+      config: configItem,
+      meta: {
+        sourceKind: isSeed ? 'seed' : 'initial_mutation',
+        mutatedGenes: [],
+      },
+    }
+  })
 
   const initialPopulation = await evaluatePopulation(
     initialDrafts,
     nextId,
+    generation,
     rivalRuntime,
+    originalRuntime,
     safeConfig.simsPerEval,
     safeConfig.fitnessMode,
     evaluate,
@@ -1477,6 +1629,7 @@ export async function runEvolution({
           partial.individuals[0],
         )
         await onProgress?.({
+          phase: 'progress',
           generation,
           bestIndividual: cloneIndividual(partialBest),
           bestGeneration,
@@ -1511,6 +1664,7 @@ export async function runEvolution({
   history.push(metrics)
 
   await onGeneration?.({
+    phase: 'generation_complete',
     generation,
     bestIndividual: cloneIndividual(bestIndividual),
     bestGeneration,
@@ -1521,20 +1675,11 @@ export async function runEvolution({
     evaluatedIndividuals: population.length,
     populationSize: safeConfig.populationSize,
     totalEvaluations,
-    generationIndividuals: population.map((individual, index) => ({
-      slotIndex: index,
-      name: individual.config.name,
-      emoji: individual.config.emoji,
-      status: 'done',
-      progress: 100,
-      gamesPlayed: individual.gamesPlayed,
-      gamesWon: individual.gamesWon,
-      mirrorRoundsPlayed: individual.mirrorRoundsPlayed,
-      mirrorRoundsWon: individual.mirrorRoundsWon,
-      primaryRate: individual.primaryRate,
-      secondaryRate: individual.secondaryRate,
-      stableStop: false,
-    })),
+    generationIndividuals: population.map((individual, index) => buildGenerationCandidateFromIndividual(individual, index, generation)),
+  })
+  generationHistory.push({
+    generation,
+    individuals: population.map((individual, index) => buildGenerationCandidateFromIndividual(individual, index, generation)),
   })
 
   let stopReason: StopReason | null = initialPopulation.cancelled
@@ -1548,7 +1693,9 @@ export async function runEvolution({
     const evaluatedPopulation = await evaluatePopulation(
       nextDrafts,
       nextId,
+      generation,
       rivalRuntime,
+      originalRuntime,
       safeConfig.simsPerEval,
       safeConfig.fitnessMode,
       evaluate,
@@ -1566,6 +1713,7 @@ export async function runEvolution({
           const bestGenerationDuringProgress =
             compareIndividuals(partialBest, bestIndividual) > 0 ? generation : bestGeneration
           await onProgress?.({
+            phase: 'progress',
             generation,
             bestIndividual: cloneIndividual(bestDuringProgress),
             bestGeneration: bestGenerationDuringProgress,
@@ -1614,6 +1762,7 @@ export async function runEvolution({
     history.push(metrics)
 
     await onGeneration?.({
+      phase: 'generation_complete',
       generation,
       bestIndividual: cloneIndividual(bestIndividual),
       bestGeneration,
@@ -1624,20 +1773,11 @@ export async function runEvolution({
       evaluatedIndividuals: population.length,
       populationSize: safeConfig.populationSize,
       totalEvaluations,
-      generationIndividuals: population.map((individual, index) => ({
-        slotIndex: index,
-        name: individual.config.name,
-        emoji: individual.config.emoji,
-        status: 'done',
-        progress: 100,
-        gamesPlayed: individual.gamesPlayed,
-        gamesWon: individual.gamesWon,
-        mirrorRoundsPlayed: individual.mirrorRoundsPlayed,
-        mirrorRoundsWon: individual.mirrorRoundsWon,
-        primaryRate: individual.primaryRate,
-        secondaryRate: individual.secondaryRate,
-        stableStop: false,
-      })),
+      generationIndividuals: population.map((individual, index) => buildGenerationCandidateFromIndividual(individual, index, generation)),
+    })
+    generationHistory.push({
+      generation,
+      individuals: population.map((individual, index) => buildGenerationCandidateFromIndividual(individual, index, generation)),
     })
 
     if (evaluatedPopulation.cancelled || shouldCancel?.()) {
@@ -1661,5 +1801,9 @@ export async function runEvolution({
     stopReason: stopReason ?? 'cancelled',
     topIndividuals: topIndividuals.length > 0 ? topIndividuals : [cloneIndividual(bestIndividual)],
     fitnessHistory: history.map(tick => ({ ...tick })),
+    generationHistory: generationHistory.map(record => ({
+      generation: record.generation,
+      individuals: record.individuals.map(cloneGenerationCandidate),
+    })),
   }
 }
