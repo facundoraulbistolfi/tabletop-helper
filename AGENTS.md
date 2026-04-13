@@ -119,6 +119,11 @@ npm run test:watch
 - URL: `https://facundoraulbistolfi.github.io/dosto/`
 - Biblioteca personal interactiva de Dostoievski publicada aparte en GitHub Pages.
 
+### Mafia God
+- Portal externo destacado desde `Home`.
+- URL: `https://facundoraulbistolfi.github.io/mafia-god/`
+- App web mobile first para jugar Mafia desde un solo celular, sin cartas ni narrador.
+
 ### Win98 Maze
 - Portal externo destacado desde `Home`.
 - URL: `https://facundoraulbistolfi.github.io/win98maze/`

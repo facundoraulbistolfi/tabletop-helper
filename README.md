@@ -37,6 +37,9 @@ Ludo temático de Pac-Man: elegís entre los cuatro fantasmas clásicos, Pac-Man
 ### Dosto
 Portal externo invitado dentro de la home. Abre [Dosto](https://facundoraulbistolfi.github.io/dosto/), una biblioteca personal interactiva sobre Dostoievski publicada aparte en GitHub Pages.
 
+### Mafia God
+Portal externo invitado dentro de la home. Abre [Mafia God](https://facundoraulbistolfi.github.io/mafia-god/), una app web mobile first para jugar Mafia desde un solo celular, sin cartas ni narrador.
+
 ### Win98 Maze
 Portal externo invitado dentro de la home. Abre [Win98 Maze](https://facundoraulbistolfi.github.io/win98maze/), un laberinto 3D en primera persona con estética Windows 98.
 

@@ -16,6 +16,7 @@ export type FilterTag = (typeof FILTER_TAGS)[number]
 
 export type CoverCollection =
   | 'study'
+  | 'casefile'
   | 'criollo'
   | 'laboratory'
   | 'ledger'
@@ -199,6 +200,21 @@ export const CATALOG_ITEMS: CatalogItem[] = [
     coverStyle: 'stamped',
     accent: '#7c4dff',
     shelfLabel: 'Lab',
+  },
+  {
+    id: 'external:mafia-god',
+    kind: 'external',
+    href: 'https://facundoraulbistolfi.github.io/mafia-god/',
+    icon: '🔪',
+    tags: ['Juego', 'Externo'],
+    chips: ['Mafia', 'Sin narrador', 'Un celular'],
+    title: 'Mafia God',
+    subtitle: 'Dirige una partida de Mafia desde un solo celular, sin cartas ni narrador.',
+    description: 'App web mobile first para jugar Mafia en grupo con un único dispositivo, revelación privada de roles y fases guiadas para evitar filtraciones accidentales.',
+    collection: 'casefile',
+    coverStyle: 'plate',
+    accent: '#b55a49',
+    shelfLabel: 'Mafia',
   },
   {
     id: 'external:win98maze',
