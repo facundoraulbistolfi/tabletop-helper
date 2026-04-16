@@ -12,6 +12,7 @@ export const pageLoaders = {
   truco: () => import('../pages/Truco'),
   pointCounter: () => import('../pages/PointCounter'),
   evoLab: () => import('../pages/EvoLab'),
+  sot: () => import('../pages/Sot'),
 } satisfies Record<string, PageLoader>
 
 const routePrefetchers: Record<string, PageLoader> = {
@@ -24,6 +25,7 @@ const routePrefetchers: Record<string, PageLoader> = {
   '/tools/truco': pageLoaders.truco,
   '/tools/point-counter': pageLoaders.pointCounter,
   '/tools/evo-lab': pageLoaders.evoLab,
+  '/tools/sot': pageLoaders.sot,
 }
 
 const prefetchedRoutes = new Set<string>()

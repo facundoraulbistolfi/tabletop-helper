@@ -110,6 +110,11 @@ npm run test:watch
 - Curvas de fitness (best/avg/worst), inspector de individuo y métricas de diversidad.
 - Usa lógica pura en `src/lib/genetic-lab/` y worker en `src/workers/genetic-lab.worker.ts`.
 
+### Sea of Treasures
+- Ruta: `/#/tools/sot`
+- Minijuego de exploración naval inspirado en `sot.jsx`.
+- Recorre una grilla con niebla de guerra, administra casco y víveres, y junta oro antes de retirarte.
+
 ### Contador de Puntos
 - Ruta: `/#/tools/point-counter`
 - Marcador genérico por jugador con suma rápida, toolbox por long press y persistencia local.
@@ -157,6 +162,7 @@ La app usa **HashRouter**, por lo que todas las URLs públicas cuelgan de `/#/`.
 | `/#/tools/pacman-ludo` | Pac-Ludo |
 | `/#/tools/point-counter` | Contador de Puntos |
 | `/#/tools/evo-lab` | EvoLab |
+| `/#/tools/sot` | Sea of Treasures |
 
 HashRouter evita configuración extra de servidor y funciona bien en GitHub Pages.
 

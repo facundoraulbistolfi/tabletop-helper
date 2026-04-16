@@ -186,6 +186,22 @@ export const CATALOG_ITEMS: CatalogItem[] = [
     accent: '#ffd34c',
     shelfLabel: 'Tablero',
   },
+
+  {
+    id: '/tools/sot',
+    kind: 'internal',
+    to: '/tools/sot',
+    icon: '⛵',
+    tags: ['Juego'],
+    chips: ['Exploración', 'Roguelite', 'Mar'],
+    title: 'Sea of Treasures',
+    subtitle: 'Navega, explora y vuelve al puerto con el mayor botín posible.',
+    description: 'Minijuego de exploración naval inspirado en el prototipo de sot.jsx: movete por un mapa, gestioná casco y víveres, y evitá tormentas mientras juntás oro.',
+    collection: 'arcade',
+    coverStyle: 'marquee',
+    accent: '#4f8bd6',
+    shelfLabel: 'Aventura',
+  },
   {
     id: '/tools/evo-lab',
     kind: 'internal',

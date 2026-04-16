@@ -34,6 +34,9 @@ Juego de memoria con sprites retro de Pac-Man, Space Invaders, Tetris y más. Mo
 ### Pac-Ludo
 Ludo temático de Pac-Man: elegís entre los cuatro fantasmas clásicos, Pac-Man o Ms. Pac-Man, movés sprites direccionales por el tablero, capturás rivales y buscás llegar al centro. Para 2–4 jugadores.
 
+### Sea of Treasures
+Minijuego de exploración naval inspirado en `sot.jsx`. Navegás una grilla con niebla parcial, administrás casco y víveres, y volvés al puerto con el mayor oro posible.
+
 ### Dosto
 Portal externo invitado dentro de la home. Abre [Dosto](https://facundoraulbistolfi.github.io/dosto/), una biblioteca personal interactiva sobre Dostoievski publicada aparte en GitHub Pages.
 
@@ -63,6 +66,7 @@ Portal externo invitado dentro de la home. Abre [Toca Toca](https://facundoraulb
 - `/#/tools/pacman-ludo` → Pac-Ludo
 - `/#/tools/point-counter` → Contador de Puntos
 - `/#/tools/evo-lab` → EvoLab
+- `/#/tools/sot` → Sea of Treasures
 
 ---
 
